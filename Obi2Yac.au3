@@ -3,14 +3,14 @@
 #AutoIt3Wrapper_Outfile=Obi2Yac.exe
 #AutoIt3Wrapper_Res_Comment=This script is designed to do name substitutions based on a phone number located in local access database.  If name is not found, it will query OpenCNAM/WhitePages.com
 #AutoIt3Wrapper_Res_Description=Obi to YAC Caller ID Reverse Lookup
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.41
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.44
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_Language=1033
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 #cs ----------------------------------------------------------------------------
 
  AutoIt Version: 3.3.8.1
- Author:         Carlos Amézaga
+ Author: Carlos Amézaga
  Licence: Apache License 2.0.  Free to modify at will, but hopefully you post your changes so other Obi users benefit. :-)
 
  Script Function:
@@ -39,7 +39,7 @@ Obi2Yac uses an INI file to define the following:
 	SysLogIP: If defined, will bind to this IP for Syslog.  Do not use 127.0.0.1. If not defined, will bing to first IP it finds.
 	SysLogPort: If defined, will bind to that port via UDP. Otherwise it will bind to port 514 UDP.
 	NoBreak: If set to 0, will prevent App exit/pause via Systray + Right click.
-   
+
 #ce ----------------------------------------------------------------------------
 
 ; Script Start
@@ -55,6 +55,7 @@ EndIf
 #include <array.au3> ; Thanks zatorg: http://www.autoitscript.com/forum/index.php?showtopic=45189&hl=Asock
 #include <_Growl.au3> ;Thanks Markus Mohnen <markus.mohnen@googlemail.com>: http://www.autoitscript.com/forum/topic/95141-growl-for-windows-udf/
 #include <_StringStripChars.au3> ;Thanks amel27 & G.Sandler (a.k.a MsCreatoR): http://www.autoitscript.com/forum/topic/69186-stringstripchr/
+#include <INet.au3>
 
 ;Don't allow pause
 AutoItSetOption ( "TrayAutoPause" , 0)
@@ -68,6 +69,10 @@ Global $dbname = @ScriptDir & "\Obi2Yac.mdb"
 
 ;Define CID Syslog String to Look for Here
 Global $CIDString = "[SLIC] CID to deliver:"
+
+;Define CID Syslog String to Look for Here
+Global $DTMFString
+Global $CaptureDTMF
 
 ;What IP to use for Syslog
 $SysLogIP = ReadINI("SysLogIP", @IPAddress1)
@@ -97,11 +102,39 @@ While 1
         ConsoleWrite($stringData & @CRLF)
 
 		$CheckSyslogData = StringInStr( $stringData, $CIDString, 0, 1, 1)
+		$DTMFDialStart = StringInStr( $stringData, "[CPT] --- FXS h/w tone generator (dial)---", 0, 1, 1) ; Set to 1 if Dialing detected
+		$DTMFDialEnd = StringInStr( $stringData, "GTT:call state changed from 0 to 2", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
+		$PhoneOnHook= StringInStr( $stringData, "[SLIC]:Slic#0 ONHOOK", 0, 1, 1) ;Phone went On hook, Reset.
+
+		;If Dialing detected, setup to capture DTMF
+		If $DTMFDialStart > 0 Then $CaptureDTMF = 1
+
+		;Start Capturing Touch Tones
+		If $CaptureDTMF = 1  AND StringInStr( $stringData, "[DSP]: ---- H/W DTMF ON (level:1) :", 0, 1, 1) > 0 Then
+			$DTMFString = $DTMFString & StringMid($stringData, 41, 1)
+		EndIf
+
+		;End of DTMF Capture. Now do Something special.
+		If $DTMFDialEnd > 0 Then
+			ConsoleWrite("DTMF Event Received: " & $DTMFString & @CRLF)
+				If $DTMFString = "69#" OR $DTMFString = "70#" OR $DTMFString = "71#" Then
+					SendEmail($DTMFString)
+				EndIf
+			$DTMFString = ""
+			$CaptureDTMF = 0
+		EndIf
+
+		;Phone went back on hook.  Reset & Clear DTMF captured data if any.
+		If $PhoneOnHook > 0 Then
+			$DTMFString = ""
+			$CaptureDTMF = 0
+		EndIf
 
 		If $CheckSyslogData > 0 Then
 			;Start the Lookups
 			ObiPhoneCall($stringData)
 		EndIf
+
     EndIf
     Sleep(100)
 WEnd
@@ -217,7 +250,13 @@ Func Broadcast($aName, $aNumber)
 	$adoRs.LockType = 3
 	$adoRs.Open ($query, $adoCon)
 
-	$phoneNumber = StringRegExpReplace($aNumber, "\A(\d{1})(\d{3})(\d{3})(\d{4})","($2) $3-$4")
+	If StringLen($aNumber) = 11 Then
+		$phoneNumber = StringRegExpReplace($aNumber, "\A(\d{1})(\d{3})(\d{3})(\d{4})","($2) $3-$4")
+	ElseIf StringLen($aNumber) = 10 Then
+		$phoneNumber = StringRegExpReplace($aNumber, "\A(\d{3})(\d{3})(\d{4})","($1) $2-$3")
+	Else
+		$phoneNumber = $aNumber
+	EndIf
 
 	If ReadINI("GrowlEnable", 0) = 1 Then
 		Local $notifications[1][1] = [["Notifcation"]]
@@ -284,7 +323,32 @@ Func SelfReduceMemory()
 	Return
 EndFunc   ;==>_SelfReduceMemory
 
+Func SendEmail($DTMFReceived)
+ If ReadINI("EnableDTMFTrigger", 0) = 1 Then
+	$s_SmtpServer = ReadINI("SmtpServer", 0)
+	$s_FromName = ReadINI("FromName", "Obi2Yac Alert")
+	$s_FromAddress = ReadINI("FromAddress", "postmaster@somewhere.net")
+	$s_ToAddress = ReadINI("ToAddress", "jdoe@@somewhere.net")
+	$s_Subject = "Obi2Yac Alert: " & ReadINI($DTMFReceived, "Undefined") & ": " & $DTMFReceived
+	Dim $as_Body[6]
+	$as_Body[0] = "Greetings,"
+	$as_Body[1] = ""
+	$as_Body[2] = " Obi2Yac event received.  Event type is: " & ReadINI($DTMFReceived, $DTMFReceived)
+	$as_Body[3] = ""
+	$as_Body[4] = "--"
+	$as_Body[5] = "Obi2Yac"
+	$Response = _INetSmtpMail ($s_SmtpServer, $s_FromName, $s_FromAddress, $s_ToAddress, $s_Subject, $as_Body, @computername, -1)
+	If $Response = 1 Then
+		ConsoleWrite("Message Sucessfully sent with the following paramaters: " & $s_SmtpServer & ", " & $s_FromName & ", " & $s_FromAddress & ", " & $s_ToAddress & ", " & $s_Subject & ", " & $DTMFReceived & @CRLF)
+	Else
+		ConsoleWrite("SMTP failed with error code " & @error & @CRLF)
+	EndIf
+ EndIf
+Return
+EndFunc
+
 Func OnAutoItExit()
     UDPCloseSocket($socket)
     UDPShutdown()
 EndFunc
+
