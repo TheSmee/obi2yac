@@ -36,7 +36,7 @@ Access Database Tables are as follows:
 Obi2Yac uses an INI file to define the following:
 	APIKey: WhitePages.com API Key.  If defined, lookups will will occur after OpenCNAM query.
 	GrowlEnable: If defined, will register with Growl if installed on local PC and send CID for broadcast.
-	SysLogIP: If defined, will bind to this IP for Syslog.  Do not use 127.0.0.1. If not defined, will bing to first IP it finds.
+	SysLogIP: If defined, will bind to this IP for Syslog.  Do not use 127.0.0.1. If not defined, will bind to first IP it finds.
 	SysLogPort: If defined, will bind to that port via UDP. Otherwise it will bind to port 514 UDP.
 	NoBreak: If set to 0, will prevent App exit/pause via Systray + Right click.
 
@@ -59,6 +59,11 @@ EndIf
 
 ;Don't allow pause
 AutoItSetOption ( "TrayAutoPause" , 0)
+
+;Look for INI and MDB files necessary by this app, if they don't exist, create them.
+FileInstall("Obi2Yac.ini", @ScriptDir & "\", 0)
+FileInstall("Obi2Yac.mdb", @ScriptDir & "\", 0)
+FileInstall("readme.txt",  @ScriptDir & "\", 0)
 
 ;Don't allow exit via Systray.  Must Kill PID.  Change via INI
 $NoBreak = ReadINI("NoBreak", 0)
