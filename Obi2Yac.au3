@@ -3,7 +3,7 @@
 #AutoIt3Wrapper_Outfile=Obi2Yac.exe
 #AutoIt3Wrapper_Res_Comment=This script is designed to do name substitutions based on a phone number located in local access database.  If name is not found, it will query OpenCNAM/WhitePages.com
 #AutoIt3Wrapper_Res_Description=Obi to YAC Caller ID Reverse Lookup
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.44
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.51
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_Language=1033
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -85,6 +85,11 @@ $SysLogIP = ReadINI("SysLogIP", @IPAddress1)
 ;What port to use for Syslog
 $SysLogPort = ReadINI("SysLogPort", 514)
 
+;DTMF Trigger Vallues
+Global $DTMFTrigger1 = ReadINI("DTMFTrigger1", "X")
+Global $DTMFTrigger2 = ReadINI("DTMFTrigger2", "X")
+Global $DTMFTrigger3 = ReadINI("DTMFTrigger3", "X")
+
 ; Start The UDP Services
 ;==============================================
 UDPStartup()
@@ -107,8 +112,10 @@ While 1
         ConsoleWrite($stringData & @CRLF)
 
 		$CheckSyslogData = StringInStr( $stringData, $CIDString, 0, 1, 1)
+		$CheckSyslogDataNull = StringInStr( $stringData, "'(null)' (null)", 0, 1, 1)
 		$DTMFDialStart = StringInStr( $stringData, "[CPT] --- FXS h/w tone generator (dial)---", 0, 1, 1) ; Set to 1 if Dialing detected
-		$DTMFDialEnd = StringInStr( $stringData, "GTT:call state changed from 0 to 2", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
+		;$DTMFDialEnd = StringInStr( $stringData, "GTT:call state changed from 0 to 2", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
+		$DTMFDialEnd = StringInStr( $stringData, "[CPT] --- FXS h/w tone generator (ringback)---", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
 		$PhoneOnHook= StringInStr( $stringData, "[SLIC]:Slic#0 ONHOOK", 0, 1, 1) ;Phone went On hook, Reset.
 
 		;If Dialing detected, setup to capture DTMF
@@ -122,7 +129,7 @@ While 1
 		;End of DTMF Capture. Now do Something special.
 		If $DTMFDialEnd > 0 Then
 			ConsoleWrite("DTMF Event Received: " & $DTMFString & @CRLF)
-				If $DTMFString = "69#" OR $DTMFString = "70#" OR $DTMFString = "71#" Then
+				If $DTMFString = $DTMFTrigger1 OR $DTMFString = $DTMFTrigger2 OR $DTMFString = $DTMFTrigger3 Then
 					SendEmail($DTMFString)
 				EndIf
 			$DTMFString = ""
@@ -135,7 +142,7 @@ While 1
 			$CaptureDTMF = 0
 		EndIf
 
-		If $CheckSyslogData > 0 Then
+		If $CheckSyslogData > 0 AND $CheckSyslogDataNull = 0 Then
 			;Start the Lookups
 			ObiPhoneCall($stringData)
 		EndIf
@@ -213,6 +220,7 @@ Func LookupPhoneNumber($phoneNumber, $phoneLen, $phoneCNAM)
 				$data = $objhttp.responseText
 
 				$oNodeResult = _StringBetween($data, "<wp:result ", "/>")
+			If IsArray($oNodeResult) Then
 				$oResult = _StringBetween($oNodeResult[0], 'wp:type="', '"')
 				$oCode = _StringBetween($oNodeResult[0], 'wp:code="', '"')
 
@@ -233,6 +241,7 @@ Func LookupPhoneNumber($phoneNumber, $phoneLen, $phoneCNAM)
 
 					$theName = $theDisplayName
 					CacheCID($theName, StringRight($phoneNumber,10))
+			EndIf
 				Else
 					$theName = "NAME UNAVAILABLE"
 				EndIf
@@ -330,15 +339,17 @@ EndFunc   ;==>_SelfReduceMemory
 
 Func SendEmail($DTMFReceived)
  If ReadINI("EnableDTMFTrigger", 0) = 1 Then
+	TraySetToolTip("Obi2Yac Event Received: " & $DTMFReceived)
+	$EmailSubject = ReadINI("EmailSubject", "Undefined")
 	$s_SmtpServer = ReadINI("SmtpServer", 0)
 	$s_FromName = ReadINI("FromName", "Obi2Yac Alert")
 	$s_FromAddress = ReadINI("FromAddress", "postmaster@somewhere.net")
 	$s_ToAddress = ReadINI("ToAddress", "jdoe@@somewhere.net")
-	$s_Subject = "Obi2Yac Alert: " & ReadINI($DTMFReceived, "Undefined") & ": " & $DTMFReceived
+	$s_Subject = "Obi2Yac Alert: " & $EmailSubject
 	Dim $as_Body[6]
 	$as_Body[0] = "Greetings,"
 	$as_Body[1] = ""
-	$as_Body[2] = " Obi2Yac event received.  Event type is: " & ReadINI($DTMFReceived, $DTMFReceived)
+	$as_Body[2] = " Obi2Yac event received (" & $DTMFReceived & ").  Event type is: " & $EmailSubject
 	$as_Body[3] = ""
 	$as_Body[4] = "--"
 	$as_Body[5] = "Obi2Yac"
@@ -356,4 +367,3 @@ Func OnAutoItExit()
     UDPCloseSocket($socket)
     UDPShutdown()
 EndFunc
-
