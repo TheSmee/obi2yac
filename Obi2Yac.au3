@@ -112,6 +112,7 @@ While 1
         ConsoleWrite($stringData & @CRLF)
 
 		$CheckSyslogData = StringInStr( $stringData, $CIDString, 0, 1, 1)
+		;Filter out null messages sent by some Obi devices to obi2yac
 		$CheckSyslogDataNull = StringInStr( $stringData, "'(null)' (null)", 0, 1, 1)
 		$DTMFDialStart = StringInStr( $stringData, "[CPT] --- FXS h/w tone generator (dial)---", 0, 1, 1) ; Set to 1 if Dialing detected
 		;$DTMFDialEnd = StringInStr( $stringData, "GTT:call state changed from 0 to 2", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
