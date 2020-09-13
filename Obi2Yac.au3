@@ -3,28 +3,29 @@
 #AutoIt3Wrapper_Outfile=Obi2Yac.exe
 #AutoIt3Wrapper_Res_Comment=This script is designed to do name substitutions based on a phone number located in local access database.  If name is not found, it will query OpenCNAM/WhitePages.com
 #AutoIt3Wrapper_Res_Description=Obi to YAC Caller ID Reverse Lookup
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.51
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.59
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_Language=1033
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 #cs ----------------------------------------------------------------------------
 
- AutoIt Version: 3.3.8.1
- Author: Carlos AmÃ©zaga
+ AutoIt Version: 3.3.14.5
+ Author: Carlos Amézaga
  Licence: Apache License 2.0.  Free to modify at will, but hopefully you post your changes so other Obi users benefit. :-)
 
  Script Function:
 	This script is designed to do name substitutions based on a phone number located in local access database.  If the name is not found in the
 	local database, it will	query OpenCNAM/WhitePages.com and hope it gets lucky during it's query.  Failing that, it returns NAME UNAVAILABLE
 	for CNAM.  Queries using Whitepages.com will only occur if you have a valid APIKey defined in the INI. Results are then broadcast to Yac
-	listeners defined in database or Growl if enabled.  All successful  queries are cached to improve speed during future calls. This script
+	listeners defined in database, Growl or PushBullet if enabled.  All successful  queries are cached to improve speed during future calls. This script
 	runs as a Syslog server and is designed to work with an Obi set to forward Syslog data to PC where Obi2Yac is running.  Your mileage may
 	vary.
 
-	You can find my program here: http://code.google.com/p/obi2yac/
+	You can find my program here: https://github.com/thesmee/obi2yac/
 	You can find YAC here: http://www.sunflowerhead.com/software/yac/
 	You can find Growl for Windows here: http://www.growlforwindows.com/gfw/
 	You can find Growl for Android here: https://play.google.com/store/apps/details?id=com.growlforandroid.client
+	More information on PushBullet: https://www.pushbullet.com
 
 Access Database Tables are as follows:
 	CallLogs: Log of all received calls
@@ -36,6 +37,7 @@ Access Database Tables are as follows:
 Obi2Yac uses an INI file to define the following:
 	APIKey: WhitePages.com API Key.  If defined, lookups will will occur after OpenCNAM query.
 	GrowlEnable: If defined, will register with Growl if installed on local PC and send CID for broadcast.
+	PushBulletlEnable: If defined, will broadcast CID information to PushBullet.  Must enter API key in INI under PushBulletlKey.
 	SysLogIP: If defined, will bind to this IP for Syslog.  Do not use 127.0.0.1. If not defined, will bind to first IP it finds.
 	SysLogPort: If defined, will bind to that port via UDP. Otherwise it will bind to port 514 UDP.
 	NoBreak: If set to 0, will prevent App exit/pause via Systray + Right click.
@@ -56,6 +58,7 @@ EndIf
 #include <_Growl.au3> ;Thanks Markus Mohnen <markus.mohnen@googlemail.com>: http://www.autoitscript.com/forum/topic/95141-growl-for-windows-udf/
 #include <_StringStripChars.au3> ;Thanks amel27 & G.Sandler (a.k.a MsCreatoR): http://www.autoitscript.com/forum/topic/69186-stringstripchr/
 #include <INet.au3>
+#Include "Curl.au3" ; Thanks Ward: https://www.autoitscript.com/forum/topic/173067-curl-udf-autoit-binary-code-version-of-libcurl-with-ssl-support/
 
 ;Don't allow pause
 AutoItSetOption ( "TrayAutoPause" , 0)
@@ -63,7 +66,7 @@ AutoItSetOption ( "TrayAutoPause" , 0)
 ;Look for INI and MDB files necessary by this app, if they don't exist, create them.
 FileInstall("Obi2Yac.ini", @ScriptDir & "\", 0)
 FileInstall("Obi2Yac.mdb", @ScriptDir & "\", 0)
-FileInstall("readme.txt",  @ScriptDir & "\", 0)
+FileInstall("readme.md",  @ScriptDir & "\", 0)
 
 ;Don't allow exit via Systray.  Must Kill PID.  Change via INI
 $NoBreak = ReadINI("NoBreak", 0)
@@ -79,6 +82,12 @@ Global $CIDString = "[SLIC] CID to deliver:"
 Global $DTMFString
 Global $CaptureDTMF
 
+;Define Push Bullet String
+$PushBulletlKey = ReadINI("PushBulletlKey", "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+
+;Define cURL Buffer Constant Here
+Global $_cURL_OutputBuffer
+
 ;What IP to use for Syslog
 $SysLogIP = ReadINI("SysLogIP", @IPAddress1)
 
@@ -89,6 +98,9 @@ $SysLogPort = ReadINI("SysLogPort", 514)
 Global $DTMFTrigger1 = ReadINI("DTMFTrigger1", "X")
 Global $DTMFTrigger2 = ReadINI("DTMFTrigger2", "X")
 Global $DTMFTrigger3 = ReadINI("DTMFTrigger3", "X")
+
+; Install a custom error handler
+$oError = ObjEvent("AutoIt.Error","ErrFunc")
 
 ; Start The UDP Services
 ;==============================================
@@ -166,7 +178,7 @@ Func ObiPhoneCall($SyslogString)
 	ConsoleWrite(@CRLF & "Name: " & $CIDName & @CRLF)
 	ConsoleWrite("Number: " & StringRegExpReplace($phoneNumber[2], "\A(\d{1})(\d{3})(\d{3})(\d{4})","($2) $3-$4") & @CRLF)
 
-	;Broadcast number lookup results to YAC clients.  It will also send out Growl if it is enabled in INI file.
+	;Broadcast number lookup results to YAC clients.  It will also send out Growl or PushBullet if it is enabled in INI file.
 	$formatedPhone = Broadcast($CIDName, $phoneNumber[2])
 
 	;Log results in database
@@ -182,7 +194,9 @@ Func FormatPhone($SyslogString)
 	$phoneNumberSyslogL = StringSplit($SyslogString, $CIDString, 1)
 	$phoneNumber = StringSplit(StringStripWS($phoneNumberSyslogL[2],3), "' ", 1)
 	$phoneNumber[1] = _StringStripChars($phoneNumber[1], "'", 3, 0, 0)
-	$phoneNumber[2] = StringLeft($phoneNumber[2], StringLen($phoneNumber[2]) - 2)
+	;$phoneNumber[2] = StringLeft($phoneNumber[2], StringLen($phoneNumber[2]) - 2)
+	$phoneNumber[2] = StringLeft($phoneNumber[2], StringLen($phoneNumber[2]))
+	ConsoleWrite($phoneNumber[1] & ' ' & $phoneNumber[2])
 	Return($phoneNumber)
 EndFunc
 
@@ -273,11 +287,18 @@ Func Broadcast($aName, $aNumber)
 		$phoneNumber = $aNumber
 	EndIf
 
+	;Broadcast number lookup results to Growl
 	If ReadINI("GrowlEnable", 0) = 1 Then
 		Local $notifications[1][1] = [["Notifcation"]]
 		Local $id=_GrowlRegister("Obi2Yac", $notifications, "http://www.autoitscript.com/autoit3/files/graphics/au3.ico")
 		_GrowlNotify($id, $notifications[0][0], "Call From: " & $phoneNumber , $aName & " : "& _Now())
 	EndIf
+
+	;Broadcast number lookup results to PushBullet
+	If ReadINI("PushBulletlEnable", 0) = 1 Then
+		$doPushBullet = PushBulletCURL($aName, $phoneNumber)
+	EndIf
+
 
 	With $adoRs
 		If $adoRs.RecordCount Then
@@ -364,7 +385,68 @@ Func SendEmail($DTMFReceived)
 Return
 EndFunc
 
+Func JsonPost($sJson, ByRef $iRetCode)
+
+	; Init Easy Curl Interface e set url (echo service)
+	Local $oCurl = Curl_Easy_Init()
+	curl_easy_setopt($oCurl, $CURLOPT_URL, "https://api.pushbullet.com/v2/pushes")
+	curl_easy_setopt($oCurl, $CURLOPT_USERPWD, $PushBulletlKey)
+
+	; Set content type header
+	Local $headers = curl_slist_append(0, "Content-Type: application/json")
+	curl_easy_setopt($oCurl, $CURLOPT_HTTPHEADER, $headers)
+
+	; Post fields & size
+	Local $stString = DllStructCreate("char v[" & StringLen($sJson) & "]")
+	DllStructSetData($stString, 1, $sJson)
+	curl_easy_setopt($oCurl, $CURLOPT_POSTFIELDS, DllStructGetPtr($stString))
+	curl_easy_setopt($oCurl, $CURLOPT_POSTFIELDSIZE, StringLen($sJson))
+
+	; Set callbac function to get server response back (see global var $_cURL_OutputBuffer)
+	$hWriteFunc = DllCallbackRegister("WriteFunc_CallBack", "uint:cdecl", "ptr;uint;uint;ptr")
+	curl_easy_setopt($oCurl, $CURLOPT_WRITEFUNCTION, DllCallbackGetPtr($hWriteFunc))
+
+	; Ignore ssl certificates check
+	curl_easy_setopt($oCurl, $CURLOPT_SSL_VERIFYPEER, 0)
+	curl_easy_setopt($oCurl, $CURLOPT_SSL_VERIFYHOST, 0)
+
+	; Execute the post request
+	$iRetCode = curl_easy_perform($oCurl)
+
+	; Set return trasfer & clear output buffer global var
+	Local $sReturnTransfer = $_cURL_OutputBuffer
+	$_cURL_OutputBuffer = ""
+
+	Return SetError(0, 0, $sReturnTransfer)
+EndFunc
+
+Func WriteFunc_CallBack($ptr,$nSize,$nMemb,$pStream)
+	Local $vData = DllStructCreate ("byte[" & $nSize*$nMemb & "]",$ptr)
+	$_cURL_OutputBuffer &= BinaryToString(DllStructGetData($vData,1))
+	Return $nSize*$nMemb
+EndFunc
+
+Func PushBulletCURL($phoneNumber, $phoneCNAM)
+	Local $sJson  = '{"type": "note", "title": "New House Call", "body": "Name: ' & $phoneNumber & '\nNumber: ' & $phoneCNAM & '\nTime: ' & _Now() & '"}'
+	Local $iRetCode, $sServerResponse
+
+	;ConsoleWrite("=== Json post test ===" & @LF)
+	ConsoleWrite(StringFormat("PushPullet Return Code: %s - %s", $iRetCode, Curl_Easy_strerror($iRetCode)) & @LF)
+	;ConsoleWrite("Data returned from server" & @LF & @LF)
+	$sServerResponse = JsonPost($sJson, $iRetCode)
+	;ConsoleWrite($sServerResponse & @LF)
+EndFunc
+
 Func OnAutoItExit()
     UDPCloseSocket($socket)
     UDPShutdown()
 EndFunc
+
+; Custom error handler
+Func ErrFunc()
+   $HexNumber=hex($oError.number,8)
+   ConsoleWrite(@CRLF &"COM Error!" & @CRLF & _
+                "Error Number: " & $HexNumber & @CRLF & _
+                "Error Description: " & $oError.windescription & @CRLF & @CRLF)
+   SetError(1) ; something to check for when this function returns
+Endfunc
