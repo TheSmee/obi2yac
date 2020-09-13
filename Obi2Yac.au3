@@ -66,7 +66,7 @@ AutoItSetOption ( "TrayAutoPause" , 0)
 ;Look for INI and MDB files necessary by this app, if they don't exist, create them.
 FileInstall("Obi2Yac.ini", @ScriptDir & "\", 0)
 FileInstall("Obi2Yac.mdb", @ScriptDir & "\", 0)
-FileInstall("readme.txt",  @ScriptDir & "\", 0)
+FileInstall("readme.md",  @ScriptDir & "\", 0)
 
 ;Don't allow exit via Systray.  Must Kill PID.  Change via INI
 $NoBreak = ReadINI("NoBreak", 0)
