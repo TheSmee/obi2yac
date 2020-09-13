@@ -4,7 +4,7 @@
 ### Licence: Apache License 2.0.  Free to modify at will, but hopefully you post your changes so other Obi users benefit. :-)
 
 ### Script Function:
-> This script is designed to do name substitutions based on a phone number located in local access database.  If the name is not found in the local database, it will query OpenCNAM/WhitePages.com and hope it gets lucky during it's query.  Failing that, it returns NAME UNAVAILABLE for CNAM.  Queries using Whitepages.com will only occur if you have a valid APIKey defined in the INI. Results are then broadcast to Yac listeners defined in database, Growl or PushBullet if enabled.  All successful queries are cached to improve speed during future calls. This script runs as a Syslog server and is designed to work with an Obi set to forward Syslog data to PC where Obi2Yac is running.  Your mileage may vary.
+This script is designed to do name substitutions based on a phone number located in local access database.  If the name is not found in the local database, it will query OpenCNAM/WhitePages.com and hope it gets lucky during it's query.  Failing that, it returns NAME UNAVAILABLE for CNAM.  Queries using Whitepages.com will only occur if you have a valid APIKey defined in the INI. Results are then broadcast to Yac listeners defined in database, Growl or PushBullet if enabled.  All successful queries are cached to improve speed during future calls. This script runs as a Syslog server and is designed to work with an Obi set to forward Syslog data to PC where Obi2Yac is running.  Your mileage may vary.
 
 - You can find my program here: https://github.com/thesmee/obi2yac/
 - You can find YAC here: http://www.sunflowerhead.com/software/yac/
