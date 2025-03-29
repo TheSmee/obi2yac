@@ -1,0 +1,9 @@
+# Ignore AutoIt compiled executable files
+*.exe
+
+# Ignore Windows thumbnail files
+*.db
+
+# Ignore shortcut files
+*.lnk
+
