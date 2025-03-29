@@ -4,7 +4,7 @@
 ### Licence: Apache License 2.0.  Free to modify at will, but hopefully you post your changes so other Obi users benefit. :-)
 
 ### Script Function:
-This script is designed to perform name substitutions based on a phone number located in a local Access database. If the name is not found in the local database, it will query OpenCNAM or WhitePages.com for a match. If no match is found, it will return "NAME UNAVAILABLE" for CNAM. Queries to WhitePages.com will only occur if a valid APIKey is defined in the INI file. Results are then broadcast to YAC listeners defined in the database, as well as to Growl or PushBullet if these options are enabled. All successful queries are cached to improve speed for future calls. This script runs as a Syslog server and is designed to work with an Obi device configured to forward Syslog data to the PC where Obi2Yac is running. Your experience may vary.
+This AutoIt App is designed is designed to work with an Obi VoIP device and performs name substitutions based on a phone number located in a local Access database. If the name is not found in the local database it will return "NAME UNAVAILABLE" for CNAM. Results are then broadcast to YAC listeners defined in the database, as well as to Growl or PushBullet if these options are enabled. All successful queries are cached to improve speed for future calls. This AutoIt App runs as a Syslog server and is designed to work with an Obi device configured to forward Syslog data to the PC where Obi2Yac is running.
 
 - You can find my program here: https://github.com/thesmee/obi2yac/
 - You can find YAC here: https://web.archive.org/web/20160808013047/http://www.sunflowerhead.com/software/yac/ (Thanks Jensen Harris!)
