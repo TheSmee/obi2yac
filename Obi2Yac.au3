@@ -1,6 +1,7 @@
 #Region ;**** Directives created by AutoIt3Wrapper_GUI ****
 #AutoIt3Wrapper_Icon=Obi2Yac.ico
 #AutoIt3Wrapper_Outfile=Obi2Yac.exe
+#AutoIt3Wrapper_UseX64=n
 #AutoIt3Wrapper_Res_Comment=This script is designed to do name substitutions based on a phone number located in local access database.  If name is not found, it will query OpenCNAM/WhitePages.com
 #AutoIt3Wrapper_Res_Description=Obi to YAC Caller ID Reverse Lookup
 #AutoIt3Wrapper_Res_Fileversion=1.0.0.59
@@ -14,17 +15,16 @@
  Licence: Apache License 2.0.  Free to modify at will, but hopefully you post your changes so other Obi users benefit. :-)
 
  Script Function:
-	This script is designed to do name substitutions based on a phone number located in local access database.  If the name is not found in the
-	local database, it will	query OpenCNAM/WhitePages.com and hope it gets lucky during it's query.  Failing that, it returns NAME UNAVAILABLE
-	for CNAM.  Queries using Whitepages.com will only occur if you have a valid APIKey defined in the INI. Results are then broadcast to Yac
-	listeners defined in database, Growl or PushBullet if enabled.  All successful  queries are cached to improve speed during future calls. This script
-	runs as a Syslog server and is designed to work with an Obi set to forward Syslog data to PC where Obi2Yac is running.  Your mileage may
-	vary.
+	This script is designed to do name substitutions based on a phone number located in local access database. Failing that, it returns NAME UNAVAILABLE
+	for CNAM. Results are then broadcast to Yac listeners defined in database, Growl or PushBullet if enabled. All successful  queries are cached to
+	improve speed during future calls. This script runs as a Syslog server and is designed to work with an Obi set to forward Syslog data to PC where
+	Obi2Yac is running. Your mileage may vary.
 
 	You can find my program here: https://github.com/thesmee/obi2yac/
-	You can find YAC here: http://www.sunflowerhead.com/software/yac/
-	You can find Growl for Windows here: http://www.growlforwindows.com/gfw/
-	You can find Growl for Android here: https://play.google.com/store/apps/details?id=com.growlforandroid.client
+	You can find YAC here: https://web.archive.org/web/20160808013047/http://www.sunflowerhead.com/software/yac/ (Thanks Jensen Harris!)
+		(http://www.sunflowerhead.com/software/yac is no longer available)
+	You can find Growl for Windows here: https://github.com/briandunnington/growl-for-windows
+	You can find Growl for Android here: https://growlforandroid.com/
 	More information on PushBullet: https://www.pushbullet.com
 
 Access Database Tables are as follows:
@@ -32,10 +32,9 @@ Access Database Tables are as follows:
 	Listeners: PCs which will receive YAC broadcasts
 	ListenerTypes: Currently defines listener types Obi2Yac can send too.  YAC/NCID are listed, but I never got around to doing NCID broadcasts.
 	Substitutions: Your personal substitutions.  You can add both Obi or regular numbers.
-	SubstitutionsCache: All successful  queries to OpenCNAM/WhitePages.com are cached here to avoid lookups & increase spead of CID broadcast
+	SubstitutionsCache: Deprecated. Was used for all successful queries to OpenCNAM/WhitePages.com which were then cached here to avoid lookups & increase spead of CID broadcast
 
 Obi2Yac uses an INI file to define the following:
-	APIKey: WhitePages.com API Key.  If defined, lookups will will occur after OpenCNAM query.
 	GrowlEnable: If defined, will register with Growl if installed on local PC and send CID for broadcast.
 	PushBulletlEnable: If defined, will broadcast CID information to PushBullet.  Must enter API key in INI under PushBulletlKey.
 	SysLogIP: If defined, will bind to this IP for Syslog.  Do not use 127.0.0.1. If not defined, will bind to first IP it finds.
@@ -65,15 +64,15 @@ AutoItSetOption ( "TrayAutoPause" , 0)
 
 ;Look for INI and MDB files necessary by this app, if they don't exist, create them.
 FileInstall("Obi2Yac.ini", @ScriptDir & "\", 0)
-FileInstall("Obi2Yac.mdb", @ScriptDir & "\", 0)
-FileInstall("readme.md",  @ScriptDir & "\", 0)
+FileInstall("Obi2Yac.accdb", @ScriptDir & "\", 0)
+FileInstall("ReadMe.md",  @ScriptDir & "\", 0)
 
 ;Don't allow exit via Systray.  Must Kill PID.  Change via INI
 $NoBreak = ReadINI("NoBreak", 0)
 Break($NoBreak)
 
 ;Define Access Database Name Here
-Global $dbname = @ScriptDir & "\Obi2Yac.mdb"
+Global $dbname = @ScriptDir & "\" & ReadINI("DatabaseName", "Obi2Yac.accdb")
 
 ;Define CID Syslog String to Look for Here
 Global $CIDString = "[SLIC] CID to deliver:"
@@ -203,13 +202,12 @@ EndFunc
 Func LookupPhoneNumber($phoneNumber, $phoneLen, $phoneCNAM)
 	$query  = "SELECT Name, Number FROM Substitutions WHERE Number = '" & StringRight($phoneNumber,10) & "' UNION SELECT Name, Number FROM SubstitutionsCache WHERE Number = '" & StringRight($phoneNumber,10) & "'"
 	$adoCon = ObjCreate("ADODB.Connection")
-	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
-	;$adoCon.Open ("Provider=Microsoft.Jet.OLEDB.4.0; Data Source=" & $dbname) ;Use this line if using MS Access 2007 and using the .accdb file extension
+	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
 	$adoRs = ObjCreate ("ADODB.Recordset")
 	$adoRs.CursorType = 1
 	$adoRs.LockType = 3
 	$adoRs.Open ($query, $adoCon)
-	$APIKey = ReadINI("APIKey", 0)
+	; $APIKey = ReadINI("APIKey", 0)
 
 	With $adoRs
 		If $adoRs.RecordCount Then
@@ -222,47 +220,51 @@ Func LookupPhoneNumber($phoneNumber, $phoneLen, $phoneCNAM)
 		ElseIf $phoneLen > 0 Then
 			$theName = $phoneCNAM
 		Else
-			$sData = InetRead("https://api.opencnam.com/v2/phone/+" & $phoneNumber)
-			$nBytesRead = @extended
-			If $nBytesRead > 0 Then
-				$theName = BinaryToString($sData)
-				CacheCID($theName, StringRight($phoneNumber,10))
-			ElseIf $APIKey <> 0 Then
-				$url = 'http://api.whitepages.com/reverse_phone/1.0/?phone=' & StringRight($phoneNumber,10) & ';api_key=' & $APIKey
-				$objhttp = ObjCreate("MSXML2.XMLhttp.3.0")
-				$objhttp.Open("GET", $url, false)
-				$objhttp.Send
-				$data = $objhttp.responseText
+			$theName = "NAME UNAVAILABLE"
+		#CS
+		## These APIs no longer exist and have been commented out.
+					$sData = InetRead("https://api.opencnam.com/v2/phone/+" & $phoneNumber)
+					$nBytesRead = @extended
+					If $nBytesRead > 0 Then
+						$theName = BinaryToString($sData)
+						CacheCID($theName, StringRight($phoneNumber,10))
+					ElseIf $APIKey <> 0 Then
+						$url = 'http://api.whitepages.com/reverse_phone/1.0/?phone=' & StringRight($phoneNumber,10) & ';api_key=' & $APIKey
+						$objhttp = ObjCreate("MSXML2.XMLhttp.3.0")
+						$objhttp.Open("GET", $url, false)
+						$objhttp.Send
+						$data = $objhttp.responseText
 
-				$oNodeResult = _StringBetween($data, "<wp:result ", "/>")
-			If IsArray($oNodeResult) Then
-				$oResult = _StringBetween($oNodeResult[0], 'wp:type="', '"')
-				$oCode = _StringBetween($oNodeResult[0], 'wp:code="', '"')
+						$oNodeResult = _StringBetween($data, "<wp:result ", "/>")
+					If IsArray($oNodeResult) Then
+						$oResult = _StringBetween($oNodeResult[0], 'wp:type="', '"')
+						$oCode = _StringBetween($oNodeResult[0], 'wp:code="', '"')
 
-				If $oResult[0] = "success" AND $oCode[0] = "Found Data" Then
-					$oNodeListing = _StringBetween($data, "<wp:listing>", "</wp:listing>")
-					$oCity =  _StringBetween($oNodeListing[0], "<wp:city>", "</wp:city>")
-					$oState =  _StringBetween($oNodeListing[0], "<wp:state>", "</wp:state>")
-					$oDisplayName = _StringBetween($oNodeListing[0], "<wp:displayname>", "</wp:displayname>")
-					$oCarrier =  _StringBetween($oNodeListing[0], "<wp:carrier>", "</wp:carrier>")
+						If $oResult[0] = "success" AND $oCode[0] = "Found Data" Then
+							$oNodeListing = _StringBetween($data, "<wp:listing>", "</wp:listing>")
+							$oCity =  _StringBetween($oNodeListing[0], "<wp:city>", "</wp:city>")
+							$oState =  _StringBetween($oNodeListing[0], "<wp:state>", "</wp:state>")
+							$oDisplayName = _StringBetween($oNodeListing[0], "<wp:displayname>", "</wp:displayname>")
+							$oCarrier =  _StringBetween($oNodeListing[0], "<wp:carrier>", "</wp:carrier>")
 
-					If (UBound($oDisplayName)) > 0 Then
-						$theDisplayName = $oDisplayName[0]
-					ElseIf (UBound($oCarrier)) > 0 Then
-						$theDisplayName = $oCity[0] & ", " & $oState[0] &  " - " & $oCarrier[0]
-					Else
-						$theDisplayName = ""
+							If (UBound($oDisplayName)) > 0 Then
+								$theDisplayName = $oDisplayName[0]
+							ElseIf (UBound($oCarrier)) > 0 Then
+								$theDisplayName = $oCity[0] & ", " & $oState[0] &  " - " & $oCarrier[0]
+							Else
+								$theDisplayName = ""
+							EndIf
+
+							$theName = $theDisplayName
+							CacheCID($theName, StringRight($phoneNumber,10))
 					EndIf
-
-					$theName = $theDisplayName
-					CacheCID($theName, StringRight($phoneNumber,10))
-			EndIf
-				Else
-					$theName = "NAME UNAVAILABLE"
-				EndIf
-			Else
-				$theName = "NAME UNAVAILABLE"
-			EndIf
+						Else
+							$theName = "NAME UNAVAILABLE"
+						EndIf
+					Else
+						$theName = "NAME UNAVAILABLE"
+					EndIf
+		#CE
 		EndIf
 	EndWith
 	$adoCon.Close
@@ -272,8 +274,7 @@ EndFunc
 Func Broadcast($aName, $aNumber)
 	$query  = "SELECT * FROM Listeners WHERE ACTIVE=1"
 	$adoCon = ObjCreate("ADODB.Connection")
-	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
-	;$adoCon.Open ("Provider=Microsoft.Jet.OLEDB.4.0; Data Source=" & $dbname) ;Use this line if using MS Access 2007 and using the .accdb file extension
+	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
 	$adoRs = ObjCreate ("ADODB.Recordset")
 	$adoRs.CursorType = 1
 	$adoRs.LockType = 3
@@ -332,8 +333,7 @@ EndFunc
 Func CacheCID($aName, $aNumber)
 	$query  = "INSERT INTO SubstitutionsCache ([Name], [Number]) VALUES ('" & StringReplace($aName, "'", "''") & "', '" & $aNumber &"')"
 	$adoCon = ObjCreate("ADODB.Connection")
-	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
-	;$adoCon.Open ("Provider=Microsoft.Jet.OLEDB.4.0; Data Source=" & $dbname) ;Use this line if using MS Access 2007 and using the .accdb file extension
+	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
 	$adoCon.Execute($query)
 	$adoCon.Close
 	Return
@@ -342,8 +342,7 @@ EndFunc
 Func LogCID($aName, $aNumber)
 	$query  = "INSERT INTO CallLogs ([Name], [Number]) VALUES ('" & StringReplace($aName, "'", "''") & "', '" & $aNumber &"')"
 	$adoCon = ObjCreate("ADODB.Connection")
-	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
-	;$adoCon.Open ("Provider=Microsoft.Jet.OLEDB.4.0; Data Source=" & $dbname) ;Use this line if using MS Access 2007 and using the .accdb file extension
+	$adoCon.Open("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=" & $dbname) ;Use this line if using MS Access 2003 and lower
 	$adoCon.Execute($query)
 	$adoCon.Close
 	Return
@@ -366,7 +365,7 @@ Func SendEmail($DTMFReceived)
 	$s_SmtpServer = ReadINI("SmtpServer", 0)
 	$s_FromName = ReadINI("FromName", "Obi2Yac Alert")
 	$s_FromAddress = ReadINI("FromAddress", "postmaster@somewhere.net")
-	$s_ToAddress = ReadINI("ToAddress", "jdoe@@somewhere.net")
+	$s_ToAddress = ReadINI("ToAddress", "jdoe@somewhere.net")
 	$s_Subject = "Obi2Yac Alert: " & $EmailSubject
 	Dim $as_Body[6]
 	$as_Body[0] = "Greetings,"
