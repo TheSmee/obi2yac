@@ -4,7 +4,7 @@
 #AutoIt3Wrapper_UseX64=n
 #AutoIt3Wrapper_Res_Comment=This script is designed to do name substitutions based on a phone number located in local access database.  If name is not found, it will query OpenCNAM/WhitePages.com
 #AutoIt3Wrapper_Res_Description=Obi to YAC Caller ID Reverse Lookup
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.59
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.60
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_Language=1033
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
@@ -94,6 +94,10 @@ $SysLogIP = ReadINI("SysLogIP", @IPAddress1)
 $SysLogPort = ReadINI("SysLogPort", 514)
 
 ;DTMF Trigger Vallues
+Global $DTMFStart = ReadINI("DTMFStart", "[CPT] --- FXS h/w tone generator (dial)---")
+Global $DTMFEnd = ReadINI("DTMFEnd", "[CPT] --- FXS h/w tone generator (ringback)---")
+Global $DTMFKey = ReadINI("DTMFKey", "---- H/W DTMF ON (FXS: 0, level:1) :")
+Global $OnHook = ReadINI("OnHook", "[SLIC]:Slic#0 ONHOOK")
 Global $DTMFTrigger1 = ReadINI("DTMFTrigger1", "X")
 Global $DTMFTrigger2 = ReadINI("DTMFTrigger2", "X")
 Global $DTMFTrigger3 = ReadINI("DTMFTrigger3", "X")
@@ -119,23 +123,24 @@ While 1
     If $data <> "" Then
 		$stringData = BinaryToString($data)
 
-		;Output Syslog Data for Curious People
+		;Output Syslog Data for Curious People. Run via AutoIt to see all Syslog messages.
         ConsoleWrite($stringData & @CRLF)
 
 		$CheckSyslogData = StringInStr( $stringData, $CIDString, 0, 1, 1)
 		;Filter out null messages sent by some Obi devices to obi2yac
 		$CheckSyslogDataNull = StringInStr( $stringData, "'(null)' (null)", 0, 1, 1)
-		$DTMFDialStart = StringInStr( $stringData, "[CPT] --- FXS h/w tone generator (dial)---", 0, 1, 1) ; Set to 1 if Dialing detected
-		;$DTMFDialEnd = StringInStr( $stringData, "GTT:call state changed from 0 to 2", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
-		$DTMFDialEnd = StringInStr( $stringData, "[CPT] --- FXS h/w tone generator (ringback)---", 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
-		$PhoneOnHook= StringInStr( $stringData, "[SLIC]:Slic#0 ONHOOK", 0, 1, 1) ;Phone went On hook, Reset.
+		$DTMFDialStart = StringInStr( $stringData, $DTMFStart, 0, 1, 1) ; Set to 1 if Dialing detected
+		$DTMFDialEnd = StringInStr( $stringData, $DTMFEnd, 0, 1, 1) ;Set to 1 if call is starting.  End DTMF capture.
+		$PhoneOnHook= StringInStr( $stringData, $OnHook, 0, 1, 1) ;Phone went On hook, Reset.
 
 		;If Dialing detected, setup to capture DTMF
 		If $DTMFDialStart > 0 Then $CaptureDTMF = 1
 
 		;Start Capturing Touch Tones
-		If $CaptureDTMF = 1  AND StringInStr( $stringData, "[DSP]: ---- H/W DTMF ON (level:1) :", 0, 1, 1) > 0 Then
-			$DTMFString = $DTMFString & StringMid($stringData, 41, 1)
+		If $CaptureDTMF = 1  AND StringInStr( $stringData, $DTMFKey, 0, 1, 1) > 0 Then
+			;This is the start position for the seperator of the digit being detected.
+			$DigitStart = StringInStr( $stringData, " : ", 0, 1, 1)
+			$DTMFString = $DTMFString & StringMid($stringData, $DigitStart+3, 1)
 		EndIf
 
 		;End of DTMF Capture. Now do Something special.
