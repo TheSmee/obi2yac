@@ -1,3 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+config.ini
+data/*.sqlite
+data/*.sqlite3
+data/*.sqlite-*
 # Ignore AutoIt compiled executable files
 *.exe
 
@@ -7,3 +14,5 @@
 # Ignore shortcut files
 *.lnk
 
+# Ignore Access Files
+*.accdb
