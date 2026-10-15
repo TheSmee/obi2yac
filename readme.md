@@ -1,4 +1,4 @@
-# Obi2Yac
+# Obi2Yac 2.0
 
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
 caller names from SQLite substitutions, notifying configured YAC clients, and
@@ -6,12 +6,12 @@ recording calls. It uses only the Python standard library and is designed to
 run on Windows, macOS, or Linux. It does not require Docker or a desktop
 environment.
 
-I originally wrote Obi2Yac in AutoIt. This repository contains my Python
-replacement. This project is distributed under Apache License 2.0:
+The last AutoIt release was version 1.0.0.60. This repository contains version
+2.0, its Python replacement. This project is distributed under the Apache
+License 2.0:
 [TheSmee/obi2yac](https://github.com/TheSmee/obi2yac).
 
-The Python service is an initial replacement for the original AutoIt
-application; see
+See
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for its compatibility notes and known
 limits.
 
