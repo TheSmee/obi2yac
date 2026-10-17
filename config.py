@@ -160,7 +160,7 @@ def load_config(
         raise ValueError("[health] host must not be empty")
     health_port = _port(get("health", "port", "8080"), "health.port")
     health_timeout = _positive_float(
-        get("health", "timeout", "900"), "health.timeout"
+        get("health", "timeout", "15"), "health.timeout"
     )
     ncid_enabled = get_bool("ncid", "enabled")
     ncid_host = get("ncid", "host", "")

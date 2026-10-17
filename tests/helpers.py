@@ -22,7 +22,7 @@ def make_config(directory: str | Path, **overrides: object) -> AppConfig:
         "[health]\n"
         "host = 127.0.0.1\n"
         f"port = {health_port}\n"
-        "timeout = 900\n"
+        "timeout = 15\n"
         "[ncid]\n"
         "enabled = false\n"
         "host = \n"

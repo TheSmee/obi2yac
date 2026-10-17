@@ -62,6 +62,8 @@ class Obi2YacService:
         self._stopping = threading.Event()
         self._health_lock = threading.Lock()
         self._last_syslog_received: float | None = None
+        self._started_at = time.monotonic()
+        self._health_timeout_seconds = config.health_timeout * 60
         self._udp_thread: threading.Thread | None = None
         self._health_thread: threading.Thread | None = None
         self._health_log_thread: threading.Thread | None = None
@@ -143,16 +145,21 @@ class Obi2YacService:
     def health_status(self) -> tuple[int, dict[str, float | str | None]]:
         with self._health_lock:
             last_received = self._last_syslog_received
-        age = None if last_received is None else time.monotonic() - last_received
-        healthy = age is not None and age <= self.config.health_timeout
+            started_at = self._started_at
+        now = time.monotonic()
+        age = None if last_received is None else now - last_received
+        startup_age = now - started_at
+        starting = last_received is None and startup_age <= self._health_timeout_seconds
+        healthy = age is not None and age <= self._health_timeout_seconds
+        status = "starting" if starting else "healthy" if healthy else "unhealthy"
         return (
-            200 if healthy else 503,
+            503 if status == "unhealthy" else 200,
             {
-                "status": "healthy" if healthy else "unhealthy",
+                "status": status,
                 "seconds_since_last_syslog": (
                     None if age is None else round(age, 1)
                 ),
-                "syslog_timeout_seconds": self.config.health_timeout,
+                "syslog_timeout_seconds": self._health_timeout_seconds,
             },
         )
 
@@ -164,19 +171,21 @@ class Obi2YacService:
         _status_code, result = self.health_status()
         logger.info(
             "Syslog health status: %s "
-            "(seconds_since_last_syslog=%s, timeout_seconds=%s)",
+            "(seconds_since_last_syslog=%s, timeout_minutes=%s)",
             result["status"],
             result["seconds_since_last_syslog"],
-            result["syslog_timeout_seconds"],
+            self.config.health_timeout,
         )
 
     def _log_health_periodically(self) -> None:
-        while not self._stopping.wait(self.config.health_timeout):
+        while not self._stopping.wait(self._health_timeout_seconds):
             self._log_health_status()
 
     def start(self) -> None:
         if self._udp_thread is not None:
             raise RuntimeError("Service has already been started")
+        with self._health_lock:
+            self._started_at = time.monotonic()
         self._worker_thread = threading.Thread(
             target=self._process_queue, name="syslog-processor", daemon=True
         )

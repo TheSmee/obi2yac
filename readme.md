@@ -95,23 +95,26 @@ GET http://<obi2yac-host>:8080/health
 ```
 
 Publish/allow TCP port `8080` from the monitoring host (or set `[health] host`
-and `[health] port` to suit the deployment). The endpoint returns HTTP `200`
-after at least one Syslog datagram has arrived and while the latest datagram is
-within the configured silence timeout. It returns `503` before the first
-datagram and after the timeout expires. The JSON response reports status and
-seconds since the last datagram; it does not include Syslog contents. It
-checks incoming Syslog activity only, not YAC, Pushbullet, or database
-delivery.
+and `[health] port` to suit the deployment). On startup, the endpoint returns
+HTTP `200` with status `starting` while waiting for the first Syslog datagram.
+After a datagram arrives, it returns `200` while that datagram is within the
+configured silence timeout. It returns `503` if the startup grace period
+expires before the first datagram or after the timeout expires. The JSON
+response reports status and seconds since the last datagram; it does not
+include Syslog contents. It checks incoming Syslog activity only, not YAC,
+Pushbullet, or database delivery.
 
-The default silence timeout is 900 seconds (15 minutes). Configure
-`[health] timeout` or set `OBI2YAC_HEALTH_TIMEOUT` to another positive number
-of seconds. A health check is useful only if the Obi sends Syslog messages
-often enough while idle; verify the real interval and set a suitable timeout
-to avoid false alarms. The call-state messages may depend on telephone
-activity, so do not assume they are a continuous heartbeat without observing
-them during an idle period. The service logs the current Syslog health status
-at startup and then periodically using the same interval as the configured
-silence timeout.
+The default silence timeout is 15 minutes. Configure `[health] timeout` or set
+`OBI2YAC_HEALTH_TIMEOUT` to another positive number of minutes. Before the first
+Syslog datagram arrives after startup, the endpoint reports `starting` with
+HTTP `200` for this timeout interval; if no datagram arrives by then, it
+reports unhealthy with HTTP `503`. A health check is useful only if the Obi
+sends Syslog messages often enough while idle; verify the real interval and
+set a suitable timeout to avoid false alarms. The call-state messages may
+depend on telephone activity, so do not assume they are a continuous heartbeat
+without observing them during an idle period. The service logs the current
+Syslog health status at startup and then periodically using the configured
+timeout interval.
 
 The service creates the SQLite database and schema on first start. It seeds
 `ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`
@@ -151,7 +154,7 @@ variables are:
 | `[network] yac_timeout` | `OBI2YAC_YAC_TIMEOUT` | `2` seconds |
 | `[health] host` | `OBI2YAC_HEALTH_HOST` | `0.0.0.0` |
 | `[health] port` | `OBI2YAC_HEALTH_PORT` | `8080` |
-| `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `900` seconds |
+| `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `15` minutes |
 | `[ncid] enabled` | `NCID_ENABLED` or `OBI2YAC_NCID_ENABLED` | `false` |
 | `[ncid] host` | `NCID_HOST` or `OBI2YAC_NCID_HOST` | empty |
 | `[ncid] port` | `NCID_PORT` or `OBI2YAC_NCID_PORT` | `3333` |

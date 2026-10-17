@@ -15,8 +15,20 @@ from obi2yac.tests.helpers import TemporaryDirectoryTestCase, make_config
 
 
 class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
+    def test_health_timeout_is_converted_from_minutes_to_seconds(self) -> None:
+        config = make_config(self.temp_path)
+        service = Obi2YacService(config)
+        try:
+            status, result = service.health_status()
+
+            self.assertEqual(status, 200)
+            self.assertEqual(result["status"], "starting")
+            self.assertEqual(result["syslog_timeout_seconds"], 900)
+        finally:
+            service.stop()
+
     def test_health_status_is_logged_at_configured_interval(self) -> None:
-        config = make_config(self.temp_path, health_timeout="0.15")
+        config = make_config(self.temp_path, health_timeout="0.0005")
         service = Obi2YacService(config)
         try:
             with self.assertLogs("obi2yac.service", level="INFO") as captured:
@@ -35,13 +47,15 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
                         time.sleep(0.02)
 
                 self.assertGreaterEqual(len(health_reports), 2)
-                self.assertIn("Syslog health status: unhealthy", health_reports[0])
-                self.assertIn("Syslog health status: healthy", health_reports[1])
+                self.assertIn("Syslog health status: starting", health_reports[0])
+                self.assertTrue(
+                    any("Syslog health status: healthy" in report for report in health_reports)
+                )
         finally:
             service.stop()
 
     def test_health_endpoint_tracks_received_syslog_and_silence(self) -> None:
-        config = make_config(self.temp_path, health_timeout="0.2")
+        config = make_config(self.temp_path, health_timeout="0.0033333333")
         service = Obi2YacService(config)
         service.start()
 
@@ -56,9 +70,15 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
 
         try:
             status, body = read_health()
+            self.assertEqual(status, 200)
+            self.assertEqual(body["status"], "starting")
+            self.assertIsNone(body["seconds_since_last_syslog"])
+            self.assertAlmostEqual(body["syslog_timeout_seconds"], 0.2, places=2)
+
+            time.sleep(service.config.health_timeout * 60 + 0.05)
+            status, body = read_health()
             self.assertEqual(status, 503)
             self.assertEqual(body["status"], "unhealthy")
-            self.assertIsNone(body["seconds_since_last_syslog"])
 
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
                 sender.sendto(b"<7> PRD:NOPriFbToTry", service.address)
@@ -73,7 +93,7 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             self.assertEqual(body["status"], "healthy")
             self.assertIsInstance(body["seconds_since_last_syslog"], float)
 
-            time.sleep(config.health_timeout + 0.05)
+            time.sleep(config.health_timeout * 60 + 0.05)
             status, body = read_health()
             self.assertEqual(status, 503)
             self.assertEqual(body["status"], "unhealthy")

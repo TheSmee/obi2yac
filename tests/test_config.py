@@ -18,7 +18,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.udp_port, 5514)
         self.assertEqual(config.yac_port, 10629)
         self.assertEqual(config.health_host, "127.0.0.1")
-        self.assertEqual(config.health_timeout, 900)
+        self.assertEqual(config.health_timeout, 15)
         self.assertFalse(config.ncid_enabled)
         self.assertEqual(config.ncid_host, "")
         self.assertEqual(config.ncid_port, 3333)
@@ -53,7 +53,7 @@ class ConfigTests(unittest.TestCase):
                 "OBI2YAC_UDP_PORT": "5516",
                 "OBI2YAC_DATABASE_PATH": str(Path(temp) / "calls.sqlite3"),
                 "OBI2YAC_LOG_LEVEL": "WARNING",
-                "OBI2YAC_HEALTH_TIMEOUT": "1200",
+                "OBI2YAC_HEALTH_TIMEOUT": "20",
             }
             with patch("obi2yac.config.Path.is_file", return_value=False):
                 config = load_config(environ=env)
@@ -62,13 +62,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.udp_port, 5516)
         self.assertEqual(config.database_path, Path(temp) / "calls.sqlite3")
         self.assertEqual(config.log_level, "WARNING")
-        self.assertEqual(config.health_timeout, 1200)
+        self.assertEqual(config.health_timeout, 20)
 
     def test_health_timeout_can_be_overridden_by_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            config = make_config(temp, health_timeout="1200")
+            config = make_config(temp, health_timeout="20")
 
-        self.assertEqual(config.health_timeout, 1200)
+        self.assertEqual(config.health_timeout, 20)
 
     def test_ncid_settings_support_requested_environment_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
