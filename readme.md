@@ -228,8 +228,8 @@ retain a table that active AutoIt lookup SQL still reads. The external lookup
 code that once populated that cache is commented out and is not ported.
 
 For this checkout, the repository's Access data has been imported into
-`obi2yac/data/obi2yac.sqlite3`. The import contains 6,218 call logs, 2 listeners, 2
-source listener types, 21 substitutions, and 2 legacy cache entries. The
+`obi2yac/data/obi2yac.sqlite3`. The import contains 6,222 call logs, 2 listeners, 1
+source listener type, 21 substitutions, and 2 legacy cache entries. The
 SQLite database also has one reserved `ListenerTypes` ID 0 row (`Unspecified`)
 for the source listener-type default. This local database is ignored by Git
 and should be treated as private application data.
@@ -238,7 +238,7 @@ and should be treated as private application data.
 |---|---|---|
 | `CallLogs` | `ID`, `Name`, `Number`, `CreateDT` | One row per recognized incoming caller-ID event |
 | `Listeners` | `ID`, `IP`, `Description`, `Type`, `Active` | `IP` unique; only active Type 1/YAC rows are contacted |
-| `ListenerTypes` | `ID`, `Type` | ID 1 is YAC, ID 2 is NCID in the original database |
+| `ListenerTypes` | `ID`, `Type` | The current source database contains ID 1 (YAC) |
 | `Substitutions` | `ID`, `Name`, `Number`, `CreateDT` | Explicit local caller-name substitutions; `Number` unique |
 | `SubstitutionsCache` | `ID`, `Name`, `Number`, `CreateDT` | Legacy fallback lookup table; `Number` unique |
 
