@@ -7,6 +7,7 @@ import signal
 import sys
 import threading
 
+from . import __version__
 from .config import load_config
 from .service import Obi2YacService
 
@@ -65,7 +66,8 @@ def main() -> int:
         signal.signal(signal.SIGTERM, request_stop)
 
     logging.getLogger(__name__).info(
-        "Starting Obi2Yac (UDP %s:%d, database %s)",
+        "Starting Obi2Yac version %s (UDP %s:%d, database %s)",
+        __version__,
         config.udp_host,
         config.udp_port,
         config.database_path,
