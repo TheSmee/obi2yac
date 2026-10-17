@@ -99,7 +99,7 @@ class DatabaseTests(TemporaryDirectoryTestCase, unittest.TestCase):
             cache = connection.execute(
                 "SELECT ID, Name, Number, CreateDT FROM SubstitutionsCache ORDER BY ID"
             ).fetchall()
-        expected_listener_types = [(0, "Unspecified"), (1, "YAC"), (2, "NCID")]
+        expected_listener_types = [(0, "Unspecified"), (1, "YAC")]
         expected_substitutions = [
             (1, "GOOGLE INC", "6502530000", "2013-02-26T00:25:02")
         ]

@@ -60,7 +60,7 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
         try:
             sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sender.sendto(
-                b"device [SLIC] CID to deliver: 'Received Synthetic Name' 2065550123",
+                b"device [SLIC] CID to deliver: '' 12065550123\x00\x00",
                 service.address,
             )
             sender.close()
@@ -82,7 +82,7 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
                 time.sleep(0.02)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["Name"], "Synthetic Directory Name")
-            self.assertEqual(rows[0]["Number"], "2065550123")
+            self.assertEqual(rows[0]["Number"], "12065550123")
         finally:
             service.stop()
             tcp_listener.close()

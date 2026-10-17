@@ -32,6 +32,7 @@ def parse_caller_id(message: str) -> CallerId | None:
         return None
 
     payload = message[marker_at + len(CALLER_ID_MARKER) :].strip()
+    payload = payload.rstrip("\x00").rstrip()
     separator_at = payload.find("' ")
     if separator_at >= 0:
         name = payload[:separator_at].strip().strip("'")

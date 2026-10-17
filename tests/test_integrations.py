@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
 from unittest.mock import MagicMock, patch
 
@@ -35,15 +36,24 @@ class IntegrationTests(unittest.TestCase):
         response = MagicMock()
         response.status = 200
         urlopen.return_value.__enter__.return_value = response
-        PushbulletNotifier("synthetic-token", 1).send(self.call)
+        timestamp = datetime(
+            2026, 10, 15, 17, 28, 57, tzinfo=timezone(timedelta(hours=-4))
+        )
+        with patch("obi2yac.integrations.datetime") as datetime_mock:
+            datetime_mock.now.return_value.astimezone.return_value = timestamp
+            PushbulletNotifier("synthetic-token", 1).send(self.call)
 
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(request.get_header("Authorization")[:6], "Basic ")
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(payload["title"], "New House Call")
-        self.assertIn("Name: Synthetic Caller With A Long Name Here", payload["body"])
-        self.assertIn("Number: (206) 555-0123", payload["body"])
+        self.assertEqual(
+            payload["body"],
+            "Name: Synthetic Caller With A Long Name Here\n"
+            "Number: (206) 555-0123\n"
+            "Time: 10/15/2026 5:28:57 PM",
+        )
 
     @patch("obi2yac.integrations.smtplib.SMTP")
     def test_email_alert_matches_original_subject_and_body(self, smtp_class: MagicMock) -> None:

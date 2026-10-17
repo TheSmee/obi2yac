@@ -42,14 +42,20 @@ class PushbulletNotifier:
         self.timeout = timeout
 
     def send(self, call: ResolvedCall) -> None:
-        now = datetime.now().astimezone().isoformat(timespec="seconds")
+        now = datetime.now().astimezone()
+        hour = now.hour % 12 or 12
+        meridiem = "AM" if now.hour < 12 else "PM"
+        timestamp = (
+            f"{now.month}/{now.day}/{now.year} "
+            f"{hour}:{now.minute:02}:{now.second:02} {meridiem}"
+        )
         body = {
             "type": "note",
             "title": "New House Call",
             "body": (
                 f"Name: {call.name}\n"
                 f"Number: {call.display_number}\n"
-                f"Time: {now}"
+                f"Time: {timestamp}"
             ),
         }
         credentials = base64.b64encode(f"{self.token}:".encode("utf-8")).decode("ascii")

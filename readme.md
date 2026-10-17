@@ -1,4 +1,4 @@
-# Obi2Yac 2.0
+# Obi2Yac 2.1
 
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
 caller names from SQLite substitutions, notifying configured YAC clients, and
@@ -7,7 +7,7 @@ run on Windows, macOS, or Linux. It does not require Docker or a desktop
 environment.
 
 The last AutoIt release was version 1.0.0.60. This repository contains version
-2.0, its Python replacement. This project is distributed under the Apache
+2.1, its Python replacement. This project is distributed under the Apache
 License 2.0:
 [TheSmee/obi2yac](https://github.com/TheSmee/obi2yac).
 
@@ -80,7 +80,7 @@ To send a synthetic caller-ID event through the app to a local YAC listener,
 see [YAC_TESTING.md](YAC_TESTING.md) for Windows, macOS, and Linux instructions.
 
 The service creates the SQLite database and schema on first start. It seeds
-`ListenerTypes` with `0 Unspecified`, `1 YAC`, and `2 NCID`; `Substitutions`
+`ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`
 with `1 GOOGLE INC / 6502530000 / 2013-02-26T00:25:02`; and
 `SubstitutionsCache` with `4 LISTYOURSELF.NE / 9145742508 /
 2013-02-26T00:50:27` and `5 EVEREST INST / 3039965473 /
@@ -193,8 +193,8 @@ restarting the service.
 - UDP messages without `[SLIC] CID to deliver:` are ignored. The original
   `'(null)' (null)` caller-ID message is ignored as well.
 - Caller-ID text is parsed using the source's apostrophe-space separator.
-  Matching uses the final ten characters of the incoming number, as in the
-  AutoIt query; phone numbers remain text.
+  Trailing NUL terminators are ignored. Matching uses the final ten characters
+  of the incoming number, as in the AutoIt query; phone numbers remain text.
 - A matching `Substitutions` row overrides the name in syslog. If no row
   matches, the supplied syslog name is used, or `NAME UNAVAILABLE` if it is
   empty.
@@ -209,7 +209,8 @@ restarting the service.
   The source protocol adds no newline or other terminator.
 - Each recognized call event is logged once. The source has no event ID or
   deduplication rule, so retransmitted caller-ID events are not deduplicated.
-- Pushbullet sends the original “New House Call” note when enabled.
+- Pushbullet sends the original “New House Call” note when enabled, with the
+  local time formatted as `M/D/YYYY h:mm:ss AM/PM`.
 - DTMF email alerts are sent only when capture starts, the captured digits
   exactly match one of the configured triggers, and the configured end marker
   arrives. An on-hook marker clears partial capture. The alert subject is
@@ -246,8 +247,9 @@ The schema preserves integer IDs, text phone numbers, the unique listener IP
 and substitution-number constraints, and the listener-type foreign key. A
 reserved `ListenerTypes` row with ID `0` is inserted as `Unspecified` when
 missing. This makes the source's `Listeners.Type` default of `0` valid under
-SQLite foreign-key enforcement. Type ID `1` remains YAC; ID `2` (NCID) remains
-unused, as in the AutoIt program. Null listener type/active values remain
+SQLite foreign-key enforcement. Type ID `1` remains YAC. Fresh databases do
+not seed an NCID listener type; migrated databases preserve listener types
+present in their Access exports. Null listener type/active values remain
 possible; only `Active = 1` and `Type = 1` are broadcast.
 
 Access fields for call-log and substitution values are nullable in the
