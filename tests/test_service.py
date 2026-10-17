@@ -15,6 +15,31 @@ from obi2yac.tests.helpers import TemporaryDirectoryTestCase, make_config
 
 
 class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
+    def test_health_status_is_logged_at_configured_interval(self) -> None:
+        config = make_config(self.temp_path, health_timeout="0.15")
+        service = Obi2YacService(config)
+        try:
+            with self.assertLogs("obi2yac.service", level="INFO") as captured:
+                service.start()
+                deadline = time.monotonic() + 2
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                    while time.monotonic() < deadline:
+                        sender.sendto(b"<7> PRD:NOPriFbToTry", service.address)
+                        health_reports = [
+                            message
+                            for message in captured.output
+                            if "Syslog health status:" in message
+                        ]
+                        if len(health_reports) >= 2:
+                            break
+                        time.sleep(0.02)
+
+                self.assertGreaterEqual(len(health_reports), 2)
+                self.assertIn("Syslog health status: unhealthy", health_reports[0])
+                self.assertIn("Syslog health status: healthy", health_reports[1])
+        finally:
+            service.stop()
+
     def test_health_endpoint_tracks_received_syslog_and_silence(self) -> None:
         config = make_config(self.temp_path, health_timeout="0.2")
         service = Obi2YacService(config)

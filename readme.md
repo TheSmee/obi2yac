@@ -109,7 +109,9 @@ of seconds. A health check is useful only if the Obi sends Syslog messages
 often enough while idle; verify the real interval and set a suitable timeout
 to avoid false alarms. The call-state messages may depend on telephone
 activity, so do not assume they are a continuous heartbeat without observing
-them during an idle period.
+them during an idle period. The service logs the current Syslog health status
+at startup and then periodically using the same interval as the configured
+silence timeout.
 
 The service creates the SQLite database and schema on first start. It seeds
 `ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`

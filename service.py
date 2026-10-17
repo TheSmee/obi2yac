@@ -64,6 +64,7 @@ class Obi2YacService:
         self._last_syslog_received: float | None = None
         self._udp_thread: threading.Thread | None = None
         self._health_thread: threading.Thread | None = None
+        self._health_log_thread: threading.Thread | None = None
         self._worker_thread: threading.Thread | None = None
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="yac")
         self._ncid_executor = (
@@ -159,6 +160,20 @@ class Obi2YacService:
         with self._health_lock:
             self._last_syslog_received = time.monotonic()
 
+    def _log_health_status(self) -> None:
+        _status_code, result = self.health_status()
+        logger.info(
+            "Syslog health status: %s "
+            "(seconds_since_last_syslog=%s, timeout_seconds=%s)",
+            result["status"],
+            result["seconds_since_last_syslog"],
+            result["syslog_timeout_seconds"],
+        )
+
+    def _log_health_periodically(self) -> None:
+        while not self._stopping.wait(self.config.health_timeout):
+            self._log_health_status()
+
     def start(self) -> None:
         if self._udp_thread is not None:
             raise RuntimeError("Service has already been started")
@@ -177,9 +192,16 @@ class Obi2YacService:
             name="health-server",
             daemon=True,
         )
+        self._health_log_thread = threading.Thread(
+            target=self._log_health_periodically,
+            name="health-logger",
+            daemon=True,
+        )
         self._worker_thread.start()
         self._udp_thread.start()
         self._health_thread.start()
+        self._log_health_status()
+        self._health_log_thread.start()
         logger.info("Listening for OBi syslog on %s:%d", *self.address)
         logger.info("Health endpoint available on http://%s:%d/health", *self.health_address)
 
@@ -195,6 +217,8 @@ class Obi2YacService:
             self.health_server.shutdown()
             self._health_thread.join()
         self.health_server.server_close()
+        if self._health_log_thread is not None:
+            self._health_log_thread.join()
         self._messages.put(None)
         if self._worker_thread is not None:
             self._worker_thread.join()
