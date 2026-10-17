@@ -20,6 +20,7 @@ class ResolvedCall:
     name: str
     number: str
     display_number: str
+    lookup_matched: bool = False
 
 
 class NameLookup(Protocol):
@@ -66,6 +67,7 @@ def resolve_caller(caller: CallerId, database: NameLookup) -> ResolvedCall:
         name=name,
         number=caller.number,
         display_number=format_phone_number(caller.number),
+        lookup_matched=resolved_name is not None,
     )
 
 

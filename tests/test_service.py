@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import http.client
+import json
 import socket
 import sqlite3
 import threading
@@ -13,6 +15,46 @@ from obi2yac.tests.helpers import TemporaryDirectoryTestCase, make_config
 
 
 class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
+    def test_health_endpoint_tracks_received_syslog_and_silence(self) -> None:
+        config = make_config(self.temp_path, health_timeout="0.2")
+        service = Obi2YacService(config)
+        service.start()
+
+        def read_health() -> tuple[int, dict[str, object]]:
+            connection = http.client.HTTPConnection(*service.health_address, timeout=1)
+            try:
+                connection.request("GET", "/health")
+                response = connection.getresponse()
+                return response.status, json.loads(response.read())
+            finally:
+                connection.close()
+
+        try:
+            status, body = read_health()
+            self.assertEqual(status, 503)
+            self.assertEqual(body["status"], "unhealthy")
+            self.assertIsNone(body["seconds_since_last_syslog"])
+
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                sender.sendto(b"<7> PRD:NOPriFbToTry", service.address)
+
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                status, body = read_health()
+                if status == 200:
+                    break
+                time.sleep(0.02)
+            self.assertEqual(status, 200)
+            self.assertEqual(body["status"], "healthy")
+            self.assertIsInstance(body["seconds_since_last_syslog"], float)
+
+            time.sleep(config.health_timeout + 0.05)
+            status, body = read_health()
+            self.assertEqual(status, 503)
+            self.assertEqual(body["status"], "unhealthy")
+        finally:
+            service.stop()
+
     def test_udp_event_resolves_logs_and_broadcasts_end_to_end(self) -> None:
         tcp_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp_listener.bind(("127.0.0.1", 0))
@@ -97,25 +139,53 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
         self.assertEqual(count, 0)
         service.stop()
 
-    def test_disconnected_yac_client_does_not_prevent_call_logging(self) -> None:
+    def test_caller_event_logs_received_and_resolved_details(self) -> None:
         config = make_config(self.temp_path)
         service = Obi2YacService(config)
         with service.database.connect() as connection:
             connection.execute(
+                "INSERT INTO Substitutions (Name, Number) VALUES (?, ?)",
+                ("Synthetic Directory Name", "2065550123"),
+            )
+        try:
+            with self.assertLogs("obi2yac.service", level="INFO") as captured:
+                service.process_message(
+                    "[SLIC] CID to deliver: 'Synthetic Caller' 2065550123"
+                )
+            self.assertEqual(len(captured.output), 1)
+            self.assertIn("received_name='Synthetic Caller'", captured.output[0])
+            self.assertIn("received_number='2065550123'", captured.output[0])
+            self.assertIn("resolved_name='Synthetic Directory Name'", captured.output[0])
+            self.assertIn("display_number='(206) 555-0123'", captured.output[0])
+            self.assertIn("lookup_matched=True", captured.output[0])
+            self.assertIn("active_yac_listeners=0", captured.output[0])
+        finally:
+            service.stop()
+
+    def test_unavailable_yac_listener_is_logged_without_traceback(self) -> None:
+        config = make_config(self.temp_path)
+        service = Obi2YacService(config)
+        host = "192.0.2.25"
+        with service.database.connect() as connection:
+            connection.execute(
                 "INSERT INTO Listeners (IP, Type, Active) VALUES (?, 1, 1)",
-                ("127.0.0.1",),
+                (host,),
             )
         try:
             with patch.object(
                 service.yac,
                 "send",
-                side_effect=ConnectionRefusedError("synthetic disconnect"),
+                side_effect=TimeoutError("synthetic timeout"),
             ):
-                with self.assertLogs("obi2yac.service", level="ERROR"):
+                with self.assertLogs("obi2yac.service", level="WARNING") as captured:
                     service.process_message(
                         "[SLIC] CID to deliver: 'Synthetic Caller' 2065550123"
                     )
                     service._executor.shutdown(wait=True)
+            self.assertEqual(len(captured.output), 1)
+            self.assertIn(f"Unable to reach YAC listener at {host}", captured.output[0])
+            self.assertNotIn("Traceback", captured.output[0])
+            self.assertNotIn("ERROR", captured.output[0])
             with service.database.connect() as connection:
                 count = connection.execute(
                     "SELECT COUNT(*) FROM CallLogs"

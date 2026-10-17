@@ -79,6 +79,37 @@ The application does not currently include a Dockerfile or Compose stack.
 To send a synthetic caller-ID event through the app to a local YAC listener,
 see [YAC_TESTING.md](YAC_TESTING.md) for Windows, macOS, and Linux instructions.
 
+### Obi200 Syslog and health monitoring
+
+On the Obi200, open **Device Admin** and configure Syslog to send to the
+Obi2Yac host and its configured UDP port (`[network] udp_port`, default `514`).
+Set the Syslog **Level** to `7` so the device sends the detailed messages this
+service expects. Make sure the container/network forwards that UDP port to the
+application.
+
+Obi2Yac provides an HTTP health endpoint for Uptime Kuma and similar monitors:
+
+```text
+GET http://<obi2yac-host>:8080/health
+```
+
+Publish/allow TCP port `8080` from the monitoring host (or set `[health] host`
+and `[health] port` to suit the deployment). The endpoint returns HTTP `200`
+after at least one Syslog datagram has arrived and while the latest datagram is
+within the configured silence timeout. It returns `503` before the first
+datagram and after the timeout expires. The JSON response reports status and
+seconds since the last datagram; it does not include Syslog contents. It
+checks incoming Syslog activity only, not YAC, Pushbullet, or database
+delivery.
+
+The default silence timeout is 900 seconds (15 minutes). Configure
+`[health] timeout` or set `OBI2YAC_HEALTH_TIMEOUT` to another positive number
+of seconds. A health check is useful only if the Obi sends Syslog messages
+often enough while idle; verify the real interval and set a suitable timeout
+to avoid false alarms. The call-state messages may depend on telephone
+activity, so do not assume they are a continuous heartbeat without observing
+them during an idle period.
+
 The service creates the SQLite database and schema on first start. It seeds
 `ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`
 with `1 GOOGLE INC / 6502530000 / 2013-02-26T00:25:02`; and
@@ -115,6 +146,9 @@ variables are:
 | `[network] udp_port` | `OBI2YAC_UDP_PORT` | `514` |
 | `[network] yac_port` | `OBI2YAC_YAC_PORT` | `10629` |
 | `[network] yac_timeout` | `OBI2YAC_YAC_TIMEOUT` | `2` seconds |
+| `[health] host` | `OBI2YAC_HEALTH_HOST` | `0.0.0.0` |
+| `[health] port` | `OBI2YAC_HEALTH_PORT` | `8080` |
+| `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `900` seconds |
 | `[database] path` | `OBI2YAC_DATABASE_PATH` | `obi2yac/data/obi2yac.sqlite3` |
 | `[logging] level` | `OBI2YAC_LOG_LEVEL` | `INFO` |
 | `[pushbullet] enabled` | `OBI2YAC_PUSHBULLET_ENABLED` | `false` |
@@ -137,6 +171,9 @@ variables are:
 | `[dtmf] end_marker` | `OBI2YAC_DTMF_END_MARKER` | AutoIt ringback marker |
 | `[dtmf] digit_marker` | `OBI2YAC_DTMF_DIGIT_MARKER` | AutoIt DTMF marker |
 | `[dtmf] on_hook_marker` | `OBI2YAC_DTMF_ON_HOOK_MARKER` | AutoIt on-hook marker |
+
+The HTTP health endpoint listens independently of the UDP Syslog port.
+Restrict its network exposure to trusted monitoring systems.
 
 The `[dtmf]` section also accepts the source message markers. SMTP and
 Pushbullet are off unless enabled. DTMF email additionally requires
@@ -314,10 +351,12 @@ OBi device, Access database, SMTP account, or Pushbullet token.
 
 Logs include timestamps, severity, and component names. Irrelevant syslog
 packets are not logged at normal verbosity; malformed caller-ID packets are
-reported only at debug level. Caller names and numbers, Pushbullet tokens, and
-SMTP passwords are not written to operational logs. The SQLite database and
-Access-export CSVs do contain sensitive call information; restrict their file
-permissions and access accordingly.
+reported only at debug level. Caller-event logs include whether a name was
+supplied, whether a lookup matched, the active YAC listener count, and the
+received and resolved caller names and numbers. Treat operational logs as
+sensitive call information and restrict their access accordingly. Pushbullet
+tokens and SMTP passwords are not written to operational logs. The SQLite
+database and Access-export CSVs also contain sensitive call information.
 
 ## Troubleshooting
 
