@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import queue
-import sqlite3
 import socketserver
+import sqlite3
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
-
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .config import AppConfig
@@ -25,6 +24,7 @@ from .events import (
 )
 from .integrations import (
     EmailNotifier,
+    NcidClient,
     PushbulletNotifier,
     YacBroadcaster,
     send_with_logging,
@@ -45,6 +45,11 @@ class Obi2YacService:
             if config.pushbullet_enabled
             else None
         )
+        self.ncid = (
+            NcidClient(config.ncid_host, config.ncid_port)
+            if config.ncid_enabled
+            else None
+        )
         self.email = EmailNotifier(smtp_settings(config)) if config.smtp_enabled else None
         self.dtmf = DtmfTracker(
             config.dtmf_triggers if config.dtmf_enabled else (),
@@ -61,6 +66,11 @@ class Obi2YacService:
         self._health_thread: threading.Thread | None = None
         self._worker_thread: threading.Thread | None = None
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="yac")
+        self._ncid_executor = (
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="ncid")
+            if config.ncid_enabled
+            else None
+        )
 
         service = self
 
@@ -84,6 +94,8 @@ class Obi2YacService:
             )
         except OSError:
             self._executor.shutdown(wait=False, cancel_futures=True)
+            if self._ncid_executor is not None:
+                self._ncid_executor.shutdown(wait=False, cancel_futures=True)
             raise
 
         class HealthHandler(BaseHTTPRequestHandler):
@@ -113,6 +125,8 @@ class Obi2YacService:
         except OSError:
             self.server.server_close()
             self._executor.shutdown(wait=False, cancel_futures=True)
+            if self._ncid_executor is not None:
+                self._ncid_executor.shutdown(wait=False, cancel_futures=True)
             raise
 
     @property
@@ -185,6 +199,8 @@ class Obi2YacService:
         if self._worker_thread is not None:
             self._worker_thread.join()
         self._executor.shutdown(wait=True)
+        if self._ncid_executor is not None:
+            self._ncid_executor.shutdown(wait=True)
         logger.info("Obi2Yac service stopped")
 
     def serve_until(self, stop_event: threading.Event) -> None:
@@ -250,6 +266,10 @@ class Obi2YacService:
             future.add_done_callback(
                 partial(self._log_background_failure, "Pushbullet")
             )
+
+        if self.ncid is not None and self._ncid_executor is not None:
+            future = self._ncid_executor.submit(self.ncid.send, call)
+            future.add_done_callback(partial(self._log_background_failure, "NCID"))
 
         try:
             self.database.log_call(call.name, call.number)

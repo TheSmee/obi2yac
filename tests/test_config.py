@@ -19,6 +19,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.yac_port, 10629)
         self.assertEqual(config.health_host, "127.0.0.1")
         self.assertEqual(config.health_timeout, 900)
+        self.assertFalse(config.ncid_enabled)
+        self.assertEqual(config.ncid_host, "")
+        self.assertEqual(config.ncid_port, 3333)
         self.assertEqual(config.dtmf_triggers, ("69#",))
         self.assertFalse(config.pushbullet_enabled)
         self.assertFalse(config.smtp_enabled)
@@ -66,6 +69,26 @@ class ConfigTests(unittest.TestCase):
             config = make_config(temp, health_timeout="1200")
 
         self.assertEqual(config.health_timeout, 1200)
+
+    def test_ncid_settings_support_requested_environment_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config_path = Path(temp) / "config.ini"
+            config_path.write_text("", encoding="utf-8")
+            env = {
+                "NCID_ENABLED": "yes",
+                "NCID_HOST": "192.0.2.40",
+                "NCID_PORT": "3334",
+            }
+            config = load_config(config_path, environ=env)
+
+        self.assertTrue(config.ncid_enabled)
+        self.assertEqual(config.ncid_host, "192.0.2.40")
+        self.assertEqual(config.ncid_port, 3334)
+
+    def test_ncid_enabled_requires_host(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "no host is configured"):
+                make_config(temp, ncid_enabled="true")
 
     def test_default_database_is_next_to_python_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

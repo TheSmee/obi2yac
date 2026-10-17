@@ -34,6 +34,35 @@ class YacBroadcaster:
             client.sendall(self.payload(call))
 
 
+class NcidClient:
+    def __init__(self, host: str, port: int = 3333, timeout: float = 2.0) -> None:
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    @staticmethod
+    def payload(call: ResolvedCall, now: datetime | None = None) -> bytes:
+        timestamp = datetime.now() if now is None else now
+        number = call.number.replace("*", " ").replace("\r", " ").replace("\n", " ")
+        name = call.name.replace("*", " ").replace("\r", " ").replace("\n", " ")
+        line = (
+            f"CALL: *DATE*{timestamp:%m%d%Y}*TIME*{timestamp:%H%M}"
+            f"*LINE*POTS*NMBR*{number}*NAME*{name}*\n"
+        )
+        return line.encode("utf-8")
+
+    def send(self, call: ResolvedCall) -> None:
+        try:
+            with socket.create_connection(
+                (self.host, self.port), timeout=self.timeout
+            ) as client:
+                client.sendall(self.payload(call))
+        except OSError:
+            logger.warning(
+                "Unable to reach NCID server at %s:%d", self.host, self.port
+            )
+
+
 class PushbulletNotifier:
     endpoint = "https://api.pushbullet.com/v2/pushes"
 

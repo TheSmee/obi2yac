@@ -19,7 +19,8 @@ limits.
 
 - Python 3.10 or newer
 - Network access from the OBi device to the configured UDP listener
-- Optional: network access to configured YAC listener hosts, SMTP, or Pushbullet
+- Optional: network access to configured YAC listener hosts, an NCID server,
+  SMTP, or Pushbullet
 
 No third-party Python packages are required.
 
@@ -149,6 +150,9 @@ variables are:
 | `[health] host` | `OBI2YAC_HEALTH_HOST` | `0.0.0.0` |
 | `[health] port` | `OBI2YAC_HEALTH_PORT` | `8080` |
 | `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `900` seconds |
+| `[ncid] enabled` | `NCID_ENABLED` or `OBI2YAC_NCID_ENABLED` | `false` |
+| `[ncid] host` | `NCID_HOST` or `OBI2YAC_NCID_HOST` | empty |
+| `[ncid] port` | `NCID_PORT` or `OBI2YAC_NCID_PORT` | `3333` |
 | `[database] path` | `OBI2YAC_DATABASE_PATH` | `obi2yac/data/obi2yac.sqlite3` |
 | `[logging] level` | `OBI2YAC_LOG_LEVEL` | `INFO` |
 | `[pushbullet] enabled` | `OBI2YAC_PUSHBULLET_ENABLED` | `false` |
@@ -244,6 +248,13 @@ restarting the service.
   using `[network] yac_port` (default `10629`). The payload is UTF-8:
   `@CALL` + caller name truncated to 25 characters + `~` + formatted number.
   The source protocol adds no newline or other terminator.
+- When `[ncid] enabled = true`, Obi2Yac sends each call to the single configured
+  NCID server over TCP (default port `3333`). Set `[ncid] host` or
+  `NCID_HOST`/`OBI2YAC_NCID_HOST`; enabling NCID without a host is a startup
+  configuration error. The line uses local date/time, the received number,
+  and the resolved caller name in NCID `CALL:` format. Delivery runs on a
+  separate worker with a two-second socket timeout, so an unavailable NCID
+  server does not block YAC or the syslog event loop.
 - Each recognized call event is logged once. The source has no event ID or
   deduplication rule, so retransmitted caller-ID events are not deduplicated.
 - Pushbullet sends the original “New House Call” note when enabled, with the

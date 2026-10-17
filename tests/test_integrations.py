@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import socket
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
@@ -9,6 +11,7 @@ from unittest.mock import MagicMock, patch
 from obi2yac.events import ResolvedCall
 from obi2yac.integrations import (
     EmailNotifier,
+    NcidClient,
     PushbulletNotifier,
     SmtpSettings,
     YacBroadcaster,
@@ -30,6 +33,45 @@ class IntegrationTests(unittest.TestCase):
             b"@CALLSynthetic Caller With A L~(206) 555-0123",
         )
         self.assertFalse(payload.endswith(b"\n"))
+
+    def test_ncid_line_format_and_tcp_delivery(self) -> None:
+        timestamp = datetime(2026, 10, 17, 12, 55)
+        payload = NcidClient.payload(self.call, timestamp)
+        self.assertEqual(
+            payload,
+            b"CALL: *DATE*10172026*TIME*1255*LINE*POTS*NMBR*2065550123"
+            b"*NAME*Synthetic Caller With A Long Name Here*\n",
+        )
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            listener.settimeout(2)
+            client = NcidClient("127.0.0.1", listener.getsockname()[1], timeout=1)
+            sender = threading.Thread(target=client.send, args=(self.call,))
+            sender.start()
+            connection, _address = listener.accept()
+            with connection:
+                received = connection.recv(4096)
+            sender.join(timeout=2)
+        self.assertTrue(received.startswith(b"CALL: *DATE*"))
+        self.assertTrue(
+            received.endswith(b"*NAME*Synthetic Caller With A Long Name Here*\n")
+        )
+
+    def test_ncid_unavailable_server_logs_warning_without_traceback(self) -> None:
+        with patch(
+            "obi2yac.integrations.socket.create_connection",
+            side_effect=TimeoutError,
+        ):
+            with self.assertLogs("obi2yac.integrations", level="WARNING") as captured:
+                NcidClient("192.0.2.40", 3333).send(self.call)
+
+        self.assertEqual(len(captured.output), 1)
+        self.assertIn(
+            "Unable to reach NCID server at 192.0.2.40:3333", captured.output[0]
+        )
+        self.assertNotIn("Traceback", captured.output[0])
 
     @patch("obi2yac.integrations.urlopen")
     def test_pushbullet_posts_note_with_basic_token_auth(self, urlopen: MagicMock) -> None:

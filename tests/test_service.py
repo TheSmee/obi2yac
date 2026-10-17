@@ -55,6 +55,31 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
         finally:
             service.stop()
 
+    def test_enabled_ncid_dispatches_call_to_configured_server(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            listener.settimeout(2)
+            config = make_config(
+                self.temp_path,
+                ncid_enabled="true",
+                ncid_host="127.0.0.1",
+                ncid_port=listener.getsockname()[1],
+            )
+            service = Obi2YacService(config)
+            try:
+                service.process_message(
+                    "[SLIC] CID to deliver: 'Synthetic Caller' 12065550123"
+                )
+                connection, _address = listener.accept()
+                with connection:
+                    payload = connection.recv(4096)
+                self.assertIn(b"*NMBR*12065550123*NAME*Synthetic Caller*", payload)
+                self.assertTrue(payload.startswith(b"CALL: *DATE*"))
+                self.assertTrue(payload.endswith(b"\n"))
+            finally:
+                service.stop()
+
     def test_udp_event_resolves_logs_and_broadcasts_end_to_end(self) -> None:
         tcp_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp_listener.bind(("127.0.0.1", 0))
