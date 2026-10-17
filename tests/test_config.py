@@ -17,6 +17,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.udp_host, "127.0.0.1")
         self.assertEqual(config.udp_port, 5514)
         self.assertEqual(config.yac_port, 10629)
+        self.assertEqual(config.health_host, "127.0.0.1")
+        self.assertEqual(config.health_timeout, 15)
+        self.assertFalse(config.ncid_enabled)
+        self.assertEqual(config.ncid_host, "")
+        self.assertEqual(config.ncid_port, 3333)
         self.assertEqual(config.dtmf_triggers, ("69#",))
         self.assertFalse(config.pushbullet_enabled)
         self.assertFalse(config.smtp_enabled)
@@ -48,6 +53,7 @@ class ConfigTests(unittest.TestCase):
                 "OBI2YAC_UDP_PORT": "5516",
                 "OBI2YAC_DATABASE_PATH": str(Path(temp) / "calls.sqlite3"),
                 "OBI2YAC_LOG_LEVEL": "WARNING",
+                "OBI2YAC_HEALTH_TIMEOUT": "20",
             }
             with patch("obi2yac.config.Path.is_file", return_value=False):
                 config = load_config(environ=env)
@@ -56,6 +62,33 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.udp_port, 5516)
         self.assertEqual(config.database_path, Path(temp) / "calls.sqlite3")
         self.assertEqual(config.log_level, "WARNING")
+        self.assertEqual(config.health_timeout, 20)
+
+    def test_health_timeout_can_be_overridden_by_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(temp, health_timeout="20")
+
+        self.assertEqual(config.health_timeout, 20)
+
+    def test_ncid_settings_support_requested_environment_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config_path = Path(temp) / "config.ini"
+            config_path.write_text("", encoding="utf-8")
+            env = {
+                "NCID_ENABLED": "yes",
+                "NCID_HOST": "192.0.2.40",
+                "NCID_PORT": "3334",
+            }
+            config = load_config(config_path, environ=env)
+
+        self.assertTrue(config.ncid_enabled)
+        self.assertEqual(config.ncid_host, "192.0.2.40")
+        self.assertEqual(config.ncid_port, 3334)
+
+    def test_ncid_enabled_requires_host(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "no host is configured"):
+                make_config(temp, ncid_enabled="true")
 
     def test_default_database_is_next_to_python_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

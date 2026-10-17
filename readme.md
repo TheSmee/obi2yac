@@ -1,4 +1,4 @@
-# Obi2Yac 2.0
+# Obi2Yac 2.1
 
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
 caller names from SQLite substitutions, notifying configured YAC clients, and
@@ -7,7 +7,7 @@ run on Windows, macOS, or Linux. It does not require Docker or a desktop
 environment.
 
 The last AutoIt release was version 1.0.0.60. This repository contains version
-2.0, its Python replacement. This project is distributed under the Apache
+2.1, its Python replacement. This project is distributed under the Apache
 License 2.0:
 [TheSmee/obi2yac](https://github.com/TheSmee/obi2yac).
 
@@ -19,7 +19,8 @@ limits.
 
 - Python 3.10 or newer
 - Network access from the OBi device to the configured UDP listener
-- Optional: network access to configured YAC listener hosts, SMTP, or Pushbullet
+- Optional: network access to configured YAC listener hosts, an NCID server,
+  SMTP, or Pushbullet
 
 No third-party Python packages are required.
 
@@ -79,8 +80,44 @@ The application does not currently include a Dockerfile or Compose stack.
 To send a synthetic caller-ID event through the app to a local YAC listener,
 see [YAC_TESTING.md](YAC_TESTING.md) for Windows, macOS, and Linux instructions.
 
+### Obi200 Syslog and health monitoring
+
+On the Obi200, open **Device Admin** and configure Syslog to send to the
+Obi2Yac host and its configured UDP port (`[network] udp_port`, default `514`).
+Set the Syslog **Level** to `7` so the device sends the detailed messages this
+service expects. Make sure the container/network forwards that UDP port to the
+application.
+
+Obi2Yac provides an HTTP health endpoint for Uptime Kuma and similar monitors:
+
+```text
+GET http://<obi2yac-host>:8080/health
+```
+
+Publish/allow TCP port `8080` from the monitoring host (or set `[health] host`
+and `[health] port` to suit the deployment). On startup, the endpoint returns
+HTTP `200` with status `starting` while waiting for the first Syslog datagram.
+After a datagram arrives, it returns `200` while that datagram is within the
+configured silence timeout. It returns `503` if the startup grace period
+expires before the first datagram or after the timeout expires. The JSON
+response reports status and seconds since the last datagram; it does not
+include Syslog contents. It checks incoming Syslog activity only, not YAC,
+Pushbullet, or database delivery.
+
+The default silence timeout is 15 minutes. Configure `[health] timeout` or set
+`OBI2YAC_HEALTH_TIMEOUT` to another positive number of minutes. Before the first
+Syslog datagram arrives after startup, the endpoint reports `starting` with
+HTTP `200` for this timeout interval; if no datagram arrives by then, it
+reports unhealthy with HTTP `503`. A health check is useful only if the Obi
+sends Syslog messages often enough while idle; verify the real interval and
+set a suitable timeout to avoid false alarms. The call-state messages may
+depend on telephone activity, so do not assume they are a continuous heartbeat
+without observing them during an idle period. The service logs the current
+Syslog health status at startup and then periodically using the configured
+timeout interval.
+
 The service creates the SQLite database and schema on first start. It seeds
-`ListenerTypes` with `0 Unspecified`, `1 YAC`, and `2 NCID`; `Substitutions`
+`ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`
 with `1 GOOGLE INC / 6502530000 / 2013-02-26T00:25:02`; and
 `SubstitutionsCache` with `4 LISTYOURSELF.NE / 9145742508 /
 2013-02-26T00:50:27` and `5 EVEREST INST / 3039965473 /
@@ -115,6 +152,12 @@ variables are:
 | `[network] udp_port` | `OBI2YAC_UDP_PORT` | `514` |
 | `[network] yac_port` | `OBI2YAC_YAC_PORT` | `10629` |
 | `[network] yac_timeout` | `OBI2YAC_YAC_TIMEOUT` | `2` seconds |
+| `[health] host` | `OBI2YAC_HEALTH_HOST` | `0.0.0.0` |
+| `[health] port` | `OBI2YAC_HEALTH_PORT` | `8080` |
+| `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `15` minutes |
+| `[ncid] enabled` | `NCID_ENABLED` or `OBI2YAC_NCID_ENABLED` | `false` |
+| `[ncid] host` | `NCID_HOST` or `OBI2YAC_NCID_HOST` | empty |
+| `[ncid] port` | `NCID_PORT` or `OBI2YAC_NCID_PORT` | `3333` |
 | `[database] path` | `OBI2YAC_DATABASE_PATH` | `obi2yac/data/obi2yac.sqlite3` |
 | `[logging] level` | `OBI2YAC_LOG_LEVEL` | `INFO` |
 | `[pushbullet] enabled` | `OBI2YAC_PUSHBULLET_ENABLED` | `false` |
@@ -137,6 +180,9 @@ variables are:
 | `[dtmf] end_marker` | `OBI2YAC_DTMF_END_MARKER` | AutoIt ringback marker |
 | `[dtmf] digit_marker` | `OBI2YAC_DTMF_DIGIT_MARKER` | AutoIt DTMF marker |
 | `[dtmf] on_hook_marker` | `OBI2YAC_DTMF_ON_HOOK_MARKER` | AutoIt on-hook marker |
+
+The HTTP health endpoint listens independently of the UDP Syslog port.
+Restrict its network exposure to trusted monitoring systems.
 
 The `[dtmf]` section also accepts the source message markers. SMTP and
 Pushbullet are off unless enabled. DTMF email additionally requires
@@ -193,8 +239,8 @@ restarting the service.
 - UDP messages without `[SLIC] CID to deliver:` are ignored. The original
   `'(null)' (null)` caller-ID message is ignored as well.
 - Caller-ID text is parsed using the source's apostrophe-space separator.
-  Matching uses the final ten characters of the incoming number, as in the
-  AutoIt query; phone numbers remain text.
+  Trailing NUL terminators are ignored. Matching uses the final ten characters
+  of the incoming number, as in the AutoIt query; phone numbers remain text.
 - A matching `Substitutions` row overrides the name in syslog. If no row
   matches, the supplied syslog name is used, or `NAME UNAVAILABLE` if it is
   empty.
@@ -207,9 +253,17 @@ restarting the service.
   using `[network] yac_port` (default `10629`). The payload is UTF-8:
   `@CALL` + caller name truncated to 25 characters + `~` + formatted number.
   The source protocol adds no newline or other terminator.
+- When `[ncid] enabled = true`, Obi2Yac sends each call to the single configured
+  NCID server over TCP (default port `3333`). Set `[ncid] host` or
+  `NCID_HOST`/`OBI2YAC_NCID_HOST`; enabling NCID without a host is a startup
+  configuration error. The line uses local date/time, the received number,
+  and the resolved caller name in NCID `CALL:` format. Delivery runs on a
+  separate worker with a two-second socket timeout, so an unavailable NCID
+  server does not block YAC or the syslog event loop.
 - Each recognized call event is logged once. The source has no event ID or
   deduplication rule, so retransmitted caller-ID events are not deduplicated.
-- Pushbullet sends the original “New House Call” note when enabled.
+- Pushbullet sends the original “New House Call” note when enabled, with the
+  local time formatted as `M/D/YYYY h:mm:ss AM/PM`.
 - DTMF email alerts are sent only when capture starts, the captured digits
   exactly match one of the configured triggers, and the configured end marker
   arrives. An on-hook marker clears partial capture. The alert subject is
@@ -228,8 +282,8 @@ retain a table that active AutoIt lookup SQL still reads. The external lookup
 code that once populated that cache is commented out and is not ported.
 
 For this checkout, the repository's Access data has been imported into
-`obi2yac/data/obi2yac.sqlite3`. The import contains 6,218 call logs, 2 listeners, 2
-source listener types, 21 substitutions, and 2 legacy cache entries. The
+`obi2yac/data/obi2yac.sqlite3`. The import contains 6,222 call logs, 2 listeners, 1
+source listener type, 21 substitutions, and 2 legacy cache entries. The
 SQLite database also has one reserved `ListenerTypes` ID 0 row (`Unspecified`)
 for the source listener-type default. This local database is ignored by Git
 and should be treated as private application data.
@@ -238,7 +292,7 @@ and should be treated as private application data.
 |---|---|---|
 | `CallLogs` | `ID`, `Name`, `Number`, `CreateDT` | One row per recognized incoming caller-ID event |
 | `Listeners` | `ID`, `IP`, `Description`, `Type`, `Active` | `IP` unique; only active Type 1/YAC rows are contacted |
-| `ListenerTypes` | `ID`, `Type` | ID 1 is YAC, ID 2 is NCID in the original database |
+| `ListenerTypes` | `ID`, `Type` | The current source database contains ID 1 (YAC) |
 | `Substitutions` | `ID`, `Name`, `Number`, `CreateDT` | Explicit local caller-name substitutions; `Number` unique |
 | `SubstitutionsCache` | `ID`, `Name`, `Number`, `CreateDT` | Legacy fallback lookup table; `Number` unique |
 
@@ -246,8 +300,9 @@ The schema preserves integer IDs, text phone numbers, the unique listener IP
 and substitution-number constraints, and the listener-type foreign key. A
 reserved `ListenerTypes` row with ID `0` is inserted as `Unspecified` when
 missing. This makes the source's `Listeners.Type` default of `0` valid under
-SQLite foreign-key enforcement. Type ID `1` remains YAC; ID `2` (NCID) remains
-unused, as in the AutoIt program. Null listener type/active values remain
+SQLite foreign-key enforcement. Type ID `1` remains YAC. Fresh databases do
+not seed an NCID listener type; migrated databases preserve listener types
+present in their Access exports. Null listener type/active values remain
 possible; only `Active = 1` and `Type = 1` are broadcast.
 
 Access fields for call-log and substitution values are nullable in the
@@ -312,10 +367,12 @@ OBi device, Access database, SMTP account, or Pushbullet token.
 
 Logs include timestamps, severity, and component names. Irrelevant syslog
 packets are not logged at normal verbosity; malformed caller-ID packets are
-reported only at debug level. Caller names and numbers, Pushbullet tokens, and
-SMTP passwords are not written to operational logs. The SQLite database and
-Access-export CSVs do contain sensitive call information; restrict their file
-permissions and access accordingly.
+reported only at debug level. Caller-event logs include whether a name was
+supplied, whether a lookup matched, the active YAC listener count, and the
+received and resolved caller names and numbers. Treat operational logs as
+sensitive call information and restrict their access accordingly. Pushbullet
+tokens and SMTP passwords are not written to operational logs. The SQLite
+database and Access-export CSVs also contain sensitive call information.
 
 ## Troubleshooting
 

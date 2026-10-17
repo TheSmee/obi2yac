@@ -10,7 +10,6 @@ SCHEMA_VERSION = 1
 DEFAULT_LISTENER_TYPES = (
     (0, "Unspecified"),
     (1, "YAC"),
-    (2, "NCID"),
 )
 DEFAULT_SUBSTITUTIONS = (
     (1, "GOOGLE INC", "6502530000", "2013-02-26T00:25:02"),

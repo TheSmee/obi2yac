@@ -14,21 +14,20 @@
 
 ## Database findings and decisions
 
-The inspected Access database had five application tables. It contained 6,218
-`CallLogs`, 2 `Listeners`, 2 `ListenerTypes`, 21 `Substitutions`, and 2
+The inspected Access database had five application tables. It contained 6,222
+`CallLogs`, 2 `Listeners`, 1 `ListenerTypes`, 21 `Substitutions`, and 2
 `SubstitutionsCache` rows. IDs are primary keys; `Listeners.IP`,
 `Substitutions.Number`, and `SubstitutionsCache.Number` are unique. Listener
-types in the source database are ID 1 `YAC` and ID 2 `NCID`; there are no
+type in the source database is ID 1 `YAC`; there are no
 declared Access foreign-key relationships. The Python schema enforces the
-requested Listener-to-ListenerType reference and seeds ID 0 as `Unspecified`,
-ID 1 as `YAC`, and ID 2 as `NCID` so each supported listener type is available
-in new databases. It also seeds the default `GOOGLE INC` substitution and the
-two legacy cache entries `LISTYOURSELF.NE` and `EVEREST INST`; initialization
-does not overwrite existing records.
+requested Listener-to-ListenerType reference and seeds ID 0 as `Unspecified`
+and ID 1 as `YAC` in new databases. It also seeds the default `GOOGLE INC`
+substitution and the two legacy cache entries `LISTYOURSELF.NE` and
+`EVEREST INST`; initialization does not overwrite existing records.
 
 The Access data in this checkout was imported read-only to
 `obi2yac/data/obi2yac.sqlite3`, beside the Python package. All five source table row counts were preserved; the
-SQLite `ListenerTypes` total is three because it includes the reserved ID 0
+SQLite `ListenerTypes` total is two because it includes the reserved ID 0
 compatibility row. `PRAGMA integrity_check` returned `ok`, and
 `PRAGMA foreign_key_check` reported zero violations.
 
@@ -38,7 +37,7 @@ the requested non-null constraints while preserving empty text as distinct
 from absent input. `Listeners.Active` remains nullable; only value 1 is active.
 The old cache table is retained because active source SQL reads it, although
 the old API code that wrote it is commented out. Existing current source cache
-records are not automatically migrated; opt in with `--include-cache`.
+records were included in this migration with `--include-cache`.
 
 ## Intentional differences and limits
 

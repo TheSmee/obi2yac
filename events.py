@@ -20,6 +20,7 @@ class ResolvedCall:
     name: str
     number: str
     display_number: str
+    lookup_matched: bool = False
 
 
 class NameLookup(Protocol):
@@ -32,6 +33,7 @@ def parse_caller_id(message: str) -> CallerId | None:
         return None
 
     payload = message[marker_at + len(CALLER_ID_MARKER) :].strip()
+    payload = payload.rstrip("\x00").rstrip()
     separator_at = payload.find("' ")
     if separator_at >= 0:
         name = payload[:separator_at].strip().strip("'")
@@ -65,6 +67,7 @@ def resolve_caller(caller: CallerId, database: NameLookup) -> ResolvedCall:
         name=name,
         number=caller.number,
         display_number=format_phone_number(caller.number),
+        lookup_matched=resolved_name is not None,
     )
 
 

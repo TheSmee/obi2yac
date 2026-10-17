@@ -12,6 +12,10 @@ ENVIRONMENT_ALIASES = {
     "network.udp_port": ("OBI2YAC_UDP_PORT", "OBI2YAC_SYSLOG_PORT"),
     "network.yac_port": ("OBI2YAC_YAC_PORT",),
     "network.yac_timeout": ("OBI2YAC_YAC_TIMEOUT",),
+    "health.timeout": ("OBI2YAC_HEALTH_TIMEOUT",),
+    "ncid.enabled": ("OBI2YAC_NCID_ENABLED", "NCID_ENABLED"),
+    "ncid.host": ("OBI2YAC_NCID_HOST", "NCID_HOST"),
+    "ncid.port": ("OBI2YAC_NCID_PORT", "NCID_PORT"),
     "database.path": ("OBI2YAC_DATABASE_PATH", "OBI2YAC_DB_PATH"),
     "logging.level": ("OBI2YAC_LOG_LEVEL",),
     "pushbullet.enabled": ("OBI2YAC_PUSHBULLET_ENABLED", "OBI2YAC_PUSHBULLETLENABLE"),
@@ -46,6 +50,12 @@ class AppConfig:
     udp_port: int
     yac_port: int
     yac_timeout: float
+    health_host: str
+    health_port: int
+    health_timeout: float
+    ncid_enabled: bool
+    ncid_host: str
+    ncid_port: int
     database_path: Path
     log_level: str
     pushbullet_enabled: bool
@@ -145,6 +155,18 @@ def load_config(
     yac_timeout = _positive_float(
         get("network", "yac_timeout", "2.0"), "network.yac_timeout"
     )
+    health_host = get("health", "host", "0.0.0.0")
+    if not health_host:
+        raise ValueError("[health] host must not be empty")
+    health_port = _port(get("health", "port", "8080"), "health.port")
+    health_timeout = _positive_float(
+        get("health", "timeout", "15"), "health.timeout"
+    )
+    ncid_enabled = get_bool("ncid", "enabled")
+    ncid_host = get("ncid", "host", "")
+    ncid_port = _port(get("ncid", "port", "3333"), "ncid.port")
+    if ncid_enabled and not ncid_host:
+        raise ValueError("NCID is enabled but no host is configured")
     database_path_value = get("database", "path", str(DEFAULT_DATABASE_PATH))
     database_path = Path(database_path_value).expanduser()
     database_path_from_environment = any(
@@ -221,6 +243,12 @@ def load_config(
         udp_port=udp_port,
         yac_port=yac_port,
         yac_timeout=yac_timeout,
+        health_host=health_host,
+        health_port=health_port,
+        health_timeout=health_timeout,
+        ncid_enabled=ncid_enabled,
+        ncid_host=ncid_host,
+        ncid_port=ncid_port,
         database_path=database_path,
         log_level=log_level,
         pushbullet_enabled=pushbullet_enabled,
