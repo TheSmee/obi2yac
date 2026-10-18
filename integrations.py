@@ -183,7 +183,7 @@ def smtp_settings(config: AppConfig) -> SmtpSettings:
 
 def send_with_logging(
     component: str, operation: Callable[..., None], *args: object
-) -> None:
+) -> bool:
     try:
         operation(*args)
     except (
@@ -192,7 +192,9 @@ def send_with_logging(
         http.client.HTTPException,
         smtplib.SMTPException,
         TimeoutError,
-    ):
+    ) as exc:
         logger.error(
             "%s notification failed (%s)", component, type(exc).__name__
         )
+        return False
+    return True

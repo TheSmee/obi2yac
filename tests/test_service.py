@@ -325,6 +325,7 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             with (
                 patch.object(service.email, "send_dtmf_alert") as send_email,
                 patch.object(service.pushbullet, "send_dtmf_alert") as send_pushbullet,
+                self.assertLogs("obi2yac.service", level="INFO") as captured,
             ):
                 service.process_message("DIAL START")
                 service.process_message("tone : 6 DTMF DIGIT")
@@ -334,6 +335,22 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
                 service._executor.shutdown(wait=True)
             send_email.assert_called_once_with("69#")
             send_pushbullet.assert_called_once_with("69#", "Test")
+            self.assertEqual(
+                [
+                    line
+                    for line in captured.output
+                    if "DTMF trigger matched:" in line
+                ],
+                ["INFO:obi2yac.service:DTMF trigger matched: 69#"],
+            )
+            self.assertIn(
+                "INFO:obi2yac.service:Email notification sent for DTMF trigger: 69#",
+                captured.output,
+            )
+            self.assertIn(
+                "INFO:obi2yac.service:Pushbullet notification sent for DTMF trigger: 69#",
+                captured.output,
+            )
         finally:
             service.stop()
 

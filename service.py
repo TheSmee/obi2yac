@@ -248,6 +248,7 @@ class Obi2YacService:
     def process_message(self, message: str) -> None:
         triggered_digits = self.dtmf.feed(message)
         if triggered_digits is not None:
+            logger.info("DTMF trigger matched: %s", triggered_digits)
             if self.email is not None:
                 future = self._executor.submit(
                     send_with_logging,
@@ -256,7 +257,9 @@ class Obi2YacService:
                     triggered_digits,
                 )
                 future.add_done_callback(
-                    partial(self._log_background_failure, "SMTP")
+                    partial(
+                        self._log_dtmf_notification, "Email", triggered_digits
+                    )
                 )
             if self.pushbullet is not None:
                 future = self._executor.submit(
@@ -267,7 +270,11 @@ class Obi2YacService:
                     self.config.email_subject,
                 )
                 future.add_done_callback(
-                    partial(self._log_background_failure, "Pushbullet")
+                    partial(
+                        self._log_dtmf_notification,
+                        "Pushbullet",
+                        triggered_digits,
+                    )
                 )
 
         caller = parse_caller_id(message)
@@ -344,7 +351,21 @@ class Obi2YacService:
             logger.warning("Unable to reach YAC listener at %s", host)
 
     @staticmethod
-    def _log_background_failure(component: str, future: Future[None]) -> None:
+    def _log_dtmf_notification(
+        component: str, digits: str, future: Future[bool]
+    ) -> None:
+        try:
+            sent = future.result()
+        except Exception:
+            logger.exception("%s DTMF notification failed", component)
+            return
+        if sent:
+            logger.info("%s notification sent for DTMF trigger: %s", component, digits)
+
+    @staticmethod
+    def _log_background_failure(
+        component: str, future: Future[None] | Future[bool]
+    ) -> None:
         try:
             future.result()
         except Exception:

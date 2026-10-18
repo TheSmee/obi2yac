@@ -275,9 +275,11 @@ restarting the service.
   local time formatted as `M/D/YYYY h:mm:ss AM/PM`.
 - DTMF alerts are sent only when capture starts, the captured digits exactly
   match one of the configured triggers, and the configured end marker arrives.
-  An on-hook marker clears partial capture. Enabled SMTP and Pushbullet
-  integrations each receive an alert titled `Obi2Yac Alert: <configured
-  subject>` that identifies the matched trigger.
+  A match is logged at `INFO` with the captured trigger. Successful email
+  and/or Pushbullet delivery is separately logged at `INFO`; failures are
+  logged as errors. An on-hook marker clears partial capture. Enabled SMTP and
+  Pushbullet integrations each receive an alert titled
+  `Obi2Yac Alert: <configured subject>` that identifies the matched trigger.
 
 The UDP receiver queues packets and processes them in order on a worker thread.
 YAC destinations are notified concurrently, with a timeout per connection, so
