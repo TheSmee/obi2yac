@@ -23,6 +23,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.ncid_host, "")
         self.assertEqual(config.ncid_port, 3333)
         self.assertEqual(config.dtmf_triggers, ("69#",))
+        self.assertFalse(config.log_raw_syslog)
         self.assertFalse(config.pushbullet_enabled)
         self.assertFalse(config.smtp_enabled)
         self.assertFalse(config.dtmf_enabled)
@@ -63,6 +64,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.database_path, Path(temp) / "calls.sqlite3")
         self.assertEqual(config.log_level, "WARNING")
         self.assertEqual(config.health_timeout, 20)
+
+    def test_raw_syslog_logging_can_be_enabled_by_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(temp, log_raw_syslog="true")
+
+        self.assertTrue(config.log_raw_syslog)
 
     def test_health_timeout_can_be_overridden_by_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

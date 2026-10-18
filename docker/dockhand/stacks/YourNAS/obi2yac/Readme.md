@@ -65,8 +65,9 @@ those integrations. Keep real tokens and passwords private; do not publish
 `starting` state with HTTP 200 for this interval while it waits for the first
 Syslog datagram; after that, no recent Syslog activity results in HTTP 503.
 
-This stack's `compose.yaml` does not currently pass NCID settings to the
-container. NCID configuration in `.env` alone will therefore not enable it.
+The Compose file passes the NCID environment variables from `.env` into the
+container. Set `OBI2YAC_NCID_ENABLED=true` and configure the NCID host and port
+to enable it.
 
 ## Create and deploy the Dockhand stack
 

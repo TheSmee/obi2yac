@@ -83,6 +83,8 @@ class Obi2YacService:
                 service._record_syslog_received()
                 try:
                     text = data.decode("utf-8", errors="replace")
+                    if service.config.log_raw_syslog:
+                        logger.debug("Received raw Syslog message: %r", text)
                     service._messages.put_nowait(text)
                 except queue.Full:
                     logger.error("Syslog processing queue is full; dropping a packet")

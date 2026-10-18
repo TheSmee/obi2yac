@@ -209,6 +209,32 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
         self.assertEqual(count, 0)
         service.stop()
 
+    def test_raw_syslog_messages_are_logged_when_enabled(self) -> None:
+        config = make_config(self.temp_path, log_raw_syslog="true")
+        service = Obi2YacService(config)
+        service.start()
+        message = b"<7> synthetic raw syslog message"
+        try:
+            with self.assertLogs("obi2yac.service", level="DEBUG") as captured:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                    sender.sendto(message, service.address)
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and not any(
+                    "Received raw Syslog message:" in entry
+                    for entry in captured.output
+                ):
+                    time.sleep(0.01)
+
+            self.assertTrue(
+                any(
+                    "Received raw Syslog message: '<7> synthetic raw syslog message'"
+                    in entry
+                    for entry in captured.output
+                )
+            )
+        finally:
+            service.stop()
+
     def test_caller_event_logs_received_and_resolved_details(self) -> None:
         config = make_config(self.temp_path)
         service = Obi2YacService(config)

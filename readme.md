@@ -3,8 +3,8 @@
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
 caller names from SQLite substitutions, notifying configured YAC clients, and
 recording calls. It uses only the Python standard library and is designed to
-run on Windows, macOS, or Linux. It does not require Docker or a desktop
-environment.
+run natively on Windows, macOS, or Linux, or in a Docker container. It does not
+require a desktop environment.
 
 The last AutoIt release was version 1.0.0.60. This repository contains version
 2.1, its Python replacement. This project is distributed under the Apache
@@ -75,10 +75,11 @@ python3 -m obi2yac
 On macOS/Linux, use `OBI2YAC_UDP_PORT=5514 OBI2YAC_DATABASE_PATH=obi2yac/data/obi2yac.sqlite3 python3 -m obi2yac`.
 Environment-variable paths are relative to the current working directory;
 relative paths in an INI file are relative to that INI file.
-The application does not currently include a Dockerfile or Compose stack.
 
 To send a synthetic caller-ID event through the app to a local YAC listener,
 see [YAC_TESTING.md](YAC_TESTING.md) for Windows, macOS, and Linux instructions.
+For the Docker deployment example, see
+[the Dockhand/NAS deployment guide](docker/dockhand/stacks/YourNAS/obi2yac/Readme.md).
 
 ### Obi200 Syslog and health monitoring
 
@@ -160,6 +161,7 @@ variables are:
 | `[ncid] port` | `NCID_PORT` or `OBI2YAC_NCID_PORT` | `3333` |
 | `[database] path` | `OBI2YAC_DATABASE_PATH` | `obi2yac/data/obi2yac.sqlite3` |
 | `[logging] level` | `OBI2YAC_LOG_LEVEL` | `INFO` |
+| `[logging] raw_syslog` | `OBI2YAC_LOG_RAW_SYSLOG` | `false` |
 | `[pushbullet] enabled` | `OBI2YAC_PUSHBULLET_ENABLED` | `false` |
 | `[pushbullet] token` | `OBI2YAC_PUSHBULLET_TOKEN` | empty |
 | `[pushbullet] timeout` | `OBI2YAC_PUSHBULLET_TIMEOUT` | `5` seconds |
@@ -183,6 +185,12 @@ variables are:
 
 The HTTP health endpoint listens independently of the UDP Syslog port.
 Restrict its network exposure to trusted monitoring systems.
+
+For troubleshooting, set `[logging] raw_syslog = true` (or
+`OBI2YAC_LOG_RAW_SYSLOG=true`) to log each received Syslog message at `DEBUG`
+level. Set `OBI2YAC_LOG_LEVEL=DEBUG` as well to see those entries. Raw messages
+can contain caller names, phone numbers, and other sensitive details; enable
+this temporarily and protect the resulting logs.
 
 The `[dtmf]` section also accepts the source message markers. SMTP and
 Pushbullet are off unless enabled. DTMF email additionally requires
@@ -391,21 +399,23 @@ database and Access-export CSVs also contain sensitive call information.
   aggregate error and export/validate the CSV again; the tool does not print
   caller names or numbers.
 
-## Future deployment
+## Docker deployment
 
-Containerization and NAS configuration are intentionally out of scope for
-this initial conversion. A later Dockhand stack can map host UDP 514 to an
-unprivileged container UDP port such as 5514, persist the SQLite file on a
-local NAS volume, and run a separate authenticated, LAN-restricted SQLite
-administration tool. Do not expose an unauthenticated database editor to the
-internet.
+An example Dockerfile, Compose stack, environment file, and deployment guide
+are provided at
+[docker/dockhand/stacks/YourNAS/obi2yac](docker/dockhand/stacks/YourNAS/obi2yac/Readme.md).
+The example targets a Synology NAS with Dockhand, but can be adapted for other
+Docker and Compose deployments.
 
-For production use, provide the database as a persistent local container
-volume, set the UDP port and database path through environment variables,
-restrict UDP/TCP access with the NAS firewall, and keep SMTP/Pushbullet
-credentials in the container manager's secret facility where available. The
-YAC port is a destination port for outbound app connections; it is not an
-inbound listener port opened by this service.
+The stack builds the image from the Git reference selected by `OBI2YAC_REF`,
+publishes host UDP port `514` to container UDP port `5514` by default, and
+persists the SQLite database using a host bind mount. The example's health
+endpoint is not published by default; publish container TCP port `8080` only
+if a monitoring host needs access. Its `.env` file passes configuration to the
+container, including `OBI2YAC_LOG_RAW_SYSLOG` for optional raw Syslog logging.
+Restrict network access to trusted hosts, protect credentials, and treat raw
+Syslog logs as sensitive data. The YAC port is used for outbound connections;
+it is not an inbound listener port opened by the service.
 
 ## Attributions and project history
 

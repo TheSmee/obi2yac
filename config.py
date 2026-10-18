@@ -18,6 +18,7 @@ ENVIRONMENT_ALIASES = {
     "ncid.port": ("OBI2YAC_NCID_PORT", "NCID_PORT"),
     "database.path": ("OBI2YAC_DATABASE_PATH", "OBI2YAC_DB_PATH"),
     "logging.level": ("OBI2YAC_LOG_LEVEL",),
+    "logging.raw_syslog": ("OBI2YAC_LOG_RAW_SYSLOG",),
     "pushbullet.enabled": ("OBI2YAC_PUSHBULLET_ENABLED", "OBI2YAC_PUSHBULLETLENABLE"),
     "pushbullet.token": ("OBI2YAC_PUSHBULLET_TOKEN", "OBI2YAC_PUSHBULLETKEY"),
     "pushbullet.timeout": ("OBI2YAC_PUSHBULLET_TIMEOUT",),
@@ -58,6 +59,7 @@ class AppConfig:
     ncid_port: int
     database_path: Path
     log_level: str
+    log_raw_syslog: bool
     pushbullet_enabled: bool
     pushbullet_token: str
     pushbullet_timeout: float
@@ -181,6 +183,7 @@ def load_config(
     log_level = get("logging", "level", "INFO").upper()
     if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         raise ValueError("[logging] level must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
+    log_raw_syslog = get_bool("logging", "raw_syslog")
 
     pushbullet_enabled = get_bool("pushbullet", "enabled")
     pushbullet_token = get("pushbullet", "token", "")
@@ -251,6 +254,7 @@ def load_config(
         ncid_port=ncid_port,
         database_path=database_path,
         log_level=log_level,
+        log_raw_syslog=log_raw_syslog,
         pushbullet_enabled=pushbullet_enabled,
         pushbullet_token=pushbullet_token,
         pushbullet_timeout=pushbullet_timeout,
