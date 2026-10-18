@@ -139,14 +139,27 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "SMTP is enabled"):
                 load_config(config_path)
 
-    def test_dtmf_requires_trigger_and_smtp(self) -> None:
+    def test_dtmf_requires_trigger_and_at_least_one_notification_service(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "no trigger sequence"):
                 make_config(
                     temp, dtmf_enabled="true", dtmf_trigger_1=""
                 )
-            with self.assertRaisesRegex(ValueError, "SMTP is disabled"):
+            with self.assertRaisesRegex(ValueError, "both SMTP and Pushbullet"):
                 make_config(temp, dtmf_enabled="true")
+
+    def test_dtmf_can_use_pushbullet_without_smtp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(
+                temp,
+                dtmf_enabled="true",
+                pushbullet_enabled="true",
+                pushbullet_token="synthetic-token",
+            )
+
+        self.assertTrue(config.dtmf_enabled)
+        self.assertFalse(config.smtp_enabled)
+        self.assertTrue(config.pushbullet_enabled)
 
     def test_missing_configuration_is_reported(self) -> None:
         with self.assertRaises(FileNotFoundError):

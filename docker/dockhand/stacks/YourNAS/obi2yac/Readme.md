@@ -60,6 +60,14 @@ settings. Replace placeholder SMTP or Pushbullet settings only if you use
 those integrations. Keep real tokens and passwords private; do not publish
 `.env` or include real credentials in screenshots or support logs.
 
+DTMF alerts are disabled by default. To enable them, set
+`OBI2YAC_DTMF_ENABLED=true`, configure at least one trigger, and enable at least
+one delivery method: SMTP, Pushbullet, or both. For Pushbullet, set
+`OBI2YAC_PUSHBULLET_ENABLED=true` and provide a valid token. The marker defaults
+in `.env` match the OBi Syslog messages; trailing newline and NUL characters do
+not prevent the marker matches. Rebuild/redeploy after changing environment
+values.
+
 `OBI2YAC_HEALTH_TIMEOUT` is measured in minutes. Set it to `15` for a
 15-minute Syslog silence window. On startup, the health endpoint remains in
 `starting` state with HTTP 200 for this interval while it waits for the first

@@ -1,4 +1,4 @@
-# Obi2Yac 2.1
+# Obi2Yac 2.2
 
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
 caller names from SQLite substitutions, notifying configured YAC clients, and
@@ -7,7 +7,7 @@ run natively on Windows, macOS, or Linux, or in a Docker container. It does not
 require a desktop environment.
 
 The last AutoIt release was version 1.0.0.60. This repository contains version
-2.1, its Python replacement. This project is distributed under the Apache
+2.2, its Python replacement. This project is distributed under the Apache
 License 2.0:
 [TheSmee/obi2yac](https://github.com/TheSmee/obi2yac).
 
@@ -193,12 +193,13 @@ can contain caller names, phone numbers, and other sensitive details; enable
 this temporarily and protect the resulting logs.
 
 The `[dtmf]` section also accepts the source message markers. SMTP and
-Pushbullet are off unless enabled. DTMF email additionally requires
-`[dtmf] enabled = true`, at least one trigger, and SMTP enabled. Enabling
-Pushbullet requires a token; avoid putting a real token in a committed file
-and prefer the environment variable. SMTP authentication is optional; if used,
-configure both username and password. Supported TLS modes are `none`,
-`starttls`, and `ssl`.
+Pushbullet are off unless enabled. DTMF notifications require
+`[dtmf] enabled = true`, at least one trigger, and at least one enabled
+delivery method (SMTP and/or Pushbullet). When both are enabled, a matching
+trigger sends both an email and a Pushbullet note. Enabling Pushbullet requires
+a token; avoid putting a real token in a committed file and prefer the
+environment variable. SMTP authentication is optional; if used, configure both
+username and password. Supported TLS modes are `none`, `starttls`, and `ssl`.
 
 The fully qualified form `OBI2YAC_<SECTION>_<OPTION>` is also accepted (for
 example, `OBI2YAC_NETWORK_UDP_PORT`). Original INI option aliases are available
@@ -272,11 +273,11 @@ restarting the service.
   deduplication rule, so retransmitted caller-ID events are not deduplicated.
 - Pushbullet sends the original “New House Call” note when enabled, with the
   local time formatted as `M/D/YYYY h:mm:ss AM/PM`.
-- DTMF email alerts are sent only when capture starts, the captured digits
-  exactly match one of the configured triggers, and the configured end marker
-  arrives. An on-hook marker clears partial capture. The alert subject is
-  `Obi2Yac Alert: <configured subject>`, and the message identifies the
-  matched trigger.
+- DTMF alerts are sent only when capture starts, the captured digits exactly
+  match one of the configured triggers, and the configured end marker arrives.
+  An on-hook marker clears partial capture. Enabled SMTP and Pushbullet
+  integrations each receive an alert titled `Obi2Yac Alert: <configured
+  subject>` that identifies the matched trigger.
 
 The UDP receiver queues packets and processes them in order on a worker thread.
 YAC destinations are notified concurrently, with a timeout per connection, so

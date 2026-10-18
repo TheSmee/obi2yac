@@ -238,8 +238,10 @@ def load_config(
     dtmf_enabled = get_bool("dtmf", "enabled")
     if dtmf_enabled and not triggers:
         raise ValueError("DTMF alerts are enabled but no trigger sequence is configured")
-    if dtmf_enabled and not smtp_enabled:
-        raise ValueError("DTMF alerts are enabled but SMTP is disabled")
+    if dtmf_enabled and not (smtp_enabled or pushbullet_enabled):
+        raise ValueError(
+            "DTMF alerts are enabled but both SMTP and Pushbullet are disabled"
+        )
 
     return AppConfig(
         udp_host=udp_host,

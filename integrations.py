@@ -87,10 +87,21 @@ class PushbulletNotifier:
                 f"Time: {timestamp}"
             ),
         }
+        self._send_note(body["title"], body["body"])
+
+    def send_dtmf_alert(self, digits: str, subject: str) -> None:
+        self._send_note(
+            f"Obi2Yac Alert: {subject}",
+            f"DTMF trigger received: {digits}\nEvent type: {subject}",
+        )
+
+    def _send_note(self, title: str, body: str) -> None:
         credentials = base64.b64encode(f"{self.token}:".encode("utf-8")).decode("ascii")
         request = Request(
             self.endpoint,
-            data=json.dumps(body).encode("utf-8"),
+            data=json.dumps({"type": "note", "title": title, "body": body}).encode(
+                "utf-8"
+            ),
             headers={
                 "Authorization": f"Basic {credentials}",
                 "Content-Type": "application/json",

@@ -97,6 +97,21 @@ class IntegrationTests(unittest.TestCase):
             "Time: 10/15/2026 5:28:57 PM",
         )
 
+    @patch("obi2yac.integrations.urlopen")
+    def test_pushbullet_sends_dtmf_alert(self, urlopen: MagicMock) -> None:
+        response = MagicMock()
+        response.status = 200
+        urlopen.return_value.__enter__.return_value = response
+
+        PushbulletNotifier("synthetic-token", 1).send_dtmf_alert("69#", "Test Event")
+
+        payload = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(payload["type"], "note")
+        self.assertEqual(payload["title"], "Obi2Yac Alert: Test Event")
+        self.assertEqual(
+            payload["body"], "DTMF trigger received: 69#\nEvent type: Test Event"
+        )
+
     @patch("obi2yac.integrations.smtplib.SMTP")
     def test_email_alert_matches_original_subject_and_body(self, smtp_class: MagicMock) -> None:
         notifier = EmailNotifier(

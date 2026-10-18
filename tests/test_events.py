@@ -88,6 +88,40 @@ class EventTests(unittest.TestCase):
         self.assertEqual(tracker.feed("DIAL END"), "69#")
         self.assertIsNone(tracker.feed("DIAL END"))
 
+    def test_dtmf_trigger_matches_obitalk_syslog_with_newline_and_nul(self) -> None:
+        tracker = DtmfTracker(
+            ("69#",),
+            "[CPT] --- FXS h/w tone generator (dial)---",
+            "[CPT] --- FXS h/w tone generator (ringback)---",
+            "[DSP]: ---- H/W DTMF ON (FXS: 0, level:1) :",
+            "[SLIC]:Slic#0 ONHOOK",
+        )
+        self.assertIsNone(
+            tracker.feed("<7> [CPT] --- FXS h/w tone generator (dial)---\n\x00")
+        )
+        self.assertIsNone(
+            tracker.feed(
+                "<7> [DSP]: ---- H/W DTMF ON (FXS: 0, level:1) : 6 "
+                "@ 420134619 ms----\n\x00"
+            )
+        )
+        self.assertIsNone(
+            tracker.feed(
+                "<7> [DSP]: ---- H/W DTMF ON (FXS: 0, level:1) : 9 "
+                "@ 420134889 ms----\n\x00"
+            )
+        )
+        self.assertIsNone(
+            tracker.feed(
+                "<7> [DSP]: ---- H/W DTMF ON (FXS: 0, level:1) : # "
+                "@ 420135279 ms----\n\x00"
+            )
+        )
+        self.assertEqual(
+            tracker.feed("<7> [CPT] --- FXS h/w tone generator (ringback)---\n\x00"),
+            "69#",
+        )
+
     def test_on_hook_clears_partial_dtmf_sequence(self) -> None:
         tracker = DtmfTracker(
             ("69#",), "DIAL START", "DIAL END", "DTMF DIGIT", "ON HOOK"

@@ -317,16 +317,23 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             self.temp_path,
             smtp_enabled="true",
             dtmf_enabled="true",
+            pushbullet_enabled="true",
+            pushbullet_token="synthetic-token",
         )
         service = Obi2YacService(config)
         try:
-            with patch.object(service.email, "send_dtmf_alert") as send_alert:
+            with (
+                patch.object(service.email, "send_dtmf_alert") as send_email,
+                patch.object(service.pushbullet, "send_dtmf_alert") as send_pushbullet,
+            ):
                 service.process_message("DIAL START")
                 service.process_message("tone : 6 DTMF DIGIT")
                 service.process_message("tone : 9 DTMF DIGIT")
                 service.process_message("tone : # DTMF DIGIT")
                 service.process_message("DIAL END")
-            send_alert.assert_called_once_with("69#")
+                service._executor.shutdown(wait=True)
+            send_email.assert_called_once_with("69#")
+            send_pushbullet.assert_called_once_with("69#", "Test")
         finally:
             service.stop()
 

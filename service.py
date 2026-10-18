@@ -247,14 +247,28 @@ class Obi2YacService:
 
     def process_message(self, message: str) -> None:
         triggered_digits = self.dtmf.feed(message)
-        if triggered_digits is not None and self.email is not None:
-            future = self._executor.submit(
-                send_with_logging,
-                "SMTP",
-                self.email.send_dtmf_alert,
-                triggered_digits,
-            )
-            future.add_done_callback(partial(self._log_background_failure, "SMTP"))
+        if triggered_digits is not None:
+            if self.email is not None:
+                future = self._executor.submit(
+                    send_with_logging,
+                    "SMTP",
+                    self.email.send_dtmf_alert,
+                    triggered_digits,
+                )
+                future.add_done_callback(
+                    partial(self._log_background_failure, "SMTP")
+                )
+            if self.pushbullet is not None:
+                future = self._executor.submit(
+                    send_with_logging,
+                    "Pushbullet",
+                    self.pushbullet.send_dtmf_alert,
+                    triggered_digits,
+                    self.config.email_subject,
+                )
+                future.add_done_callback(
+                    partial(self._log_background_failure, "Pushbullet")
+                )
 
         caller = parse_caller_id(message)
         if caller is None:
