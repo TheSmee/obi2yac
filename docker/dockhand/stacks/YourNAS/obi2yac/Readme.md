@@ -96,6 +96,13 @@ so the NAS needs network access to GitHub when building. Changing the source
 reference or application version requires rebuilding and redeploying the
 image.
 
+The Dockerfile is stored in this local stack directory; changing
+`OBI2YAC_REF` updates the cloned application but does not update this Dockerfile.
+When updating the stack, copy the current Dockerfile from the repository too.
+Its build verifies that the LGTV WebSocket dependency can be imported, so a
+missing dependency fails the image build instead of causing a container restart
+loop.
+
 ## Configure the Obi200
 
 On the Obi200, open **Device Admin** and configure Syslog to send to the NAS

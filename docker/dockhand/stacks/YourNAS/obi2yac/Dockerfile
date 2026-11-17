@@ -10,7 +10,8 @@ RUN git clone --depth 1 \
     --branch "${OBI2YAC_REF}" \
     https://github.com/TheSmee/obi2yac.git /app/obi2yac
 
-RUN python -m pip install --no-cache-dir -r /app/obi2yac/requirements.txt
+RUN python -m pip install --no-cache-dir -r /app/obi2yac/requirements.txt \
+    && python -c "import websocket"
 
 WORKDIR /app
 
