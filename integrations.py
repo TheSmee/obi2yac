@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import base64
+import copy
 import http.client
 import json
 import logging
 import smtplib
 import socket
 import ssl
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from email.message import EmailMessage
 from typing import Callable
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+import websocket
 
 from .config import AppConfig
 from .events import ResolvedCall
@@ -32,6 +36,100 @@ class YacBroadcaster:
     def send(self, host: str, call: ResolvedCall) -> None:
         with socket.create_connection((host, self.port), timeout=self.timeout) as client:
             client.sendall(self.payload(call))
+
+
+class LGTVNotifier:
+    registration_payload = {
+        "forcePairing": False,
+        "manifest": {
+            "appVersion": "1.1",
+            "manifestVersion": 1,
+            "permissions": ["WRITE_NOTIFICATION_TOAST"],
+        },
+        "pairingType": "PROMPT",
+    }
+
+    def __init__(self, client_key: str, timeout: float = 10.0) -> None:
+        self.client_key = client_key
+        self.timeout = timeout
+
+    @staticmethod
+    def toast_message(call: ResolvedCall, now: datetime | None = None) -> str:
+        timestamp = datetime.now() if now is None else now
+        lines = (
+            f"The Phone is ringing... {timestamp:%I:%M %p}",
+            f"Name: {call.name}",
+            f"Number: {call.display_number}",
+        )
+        return (" " * 50).join(lines)
+
+    def send(self, host: str, call: ResolvedCall) -> None:
+        try:
+            self._send(host, call)
+        except (OSError, TimeoutError, websocket.WebSocketException):
+            logger.warning("Unable to reach LGTV listener at %s", host)
+
+    def _send(self, host: str, call: ResolvedCall) -> None:
+        client = websocket.create_connection(
+            f"wss://{host}:3001/",
+            timeout=self.timeout,
+            suppress_origin=True,
+            sslopt={"cert_reqs": ssl.CERT_NONE},
+        )
+        try:
+            registration_id = str(uuid.uuid4())
+            registration = copy.deepcopy(self.registration_payload)
+            registration["client-key"] = self.client_key
+            client.send(
+                json.dumps(
+                    {
+                        "type": "register",
+                        "id": registration_id,
+                        "payload": registration,
+                    }
+                )
+            )
+
+            while True:
+                response = self._receive_json(client)
+                if response.get("id") != registration_id:
+                    continue
+                if response.get("type") == "registered":
+                    break
+                if response.get("type") == "error":
+                    raise RuntimeError(f"LGTV registration error: {response}")
+
+            request_id = str(uuid.uuid4())
+            client.send(
+                json.dumps(
+                    {
+                        "type": "request",
+                        "id": request_id,
+                        "uri": "ssap://system.notifications/createToast",
+                        "payload": {"message": self.toast_message(call)},
+                    }
+                )
+            )
+
+            while True:
+                response = self._receive_json(client)
+                if response.get("id") != request_id:
+                    continue
+                if response.get("type") == "error":
+                    raise RuntimeError(f"LGTV toast error: {response}")
+                return
+        finally:
+            client.close()
+
+    @staticmethod
+    def _receive_json(client: websocket.WebSocket) -> dict[str, object]:
+        raw = client.recv()
+        if not raw:
+            raise RuntimeError("LGTV closed the WebSocket connection")
+        response = json.loads(raw)
+        if not isinstance(response, dict):
+            raise RuntimeError("LGTV returned a non-object WebSocket response")
+        return response
 
 
 class NcidClient:

@@ -24,6 +24,7 @@ from .events import (
 )
 from .integrations import (
     EmailNotifier,
+    LGTVNotifier,
     NcidClient,
     PushbulletNotifier,
     YacBroadcaster,
@@ -40,6 +41,11 @@ class Obi2YacService:
         self.database = Database(config.database_path)
         self.database.initialize()
         self.yac = YacBroadcaster(config.yac_port, config.yac_timeout)
+        self.lgtv = (
+            LGTVNotifier(config.lgtv_client_key)
+            if config.lgtv_client_key
+            else None
+        )
         self.pushbullet = (
             PushbulletNotifier(config.pushbullet_token, config.pushbullet_timeout)
             if config.pushbullet_enabled
@@ -299,21 +305,43 @@ class Obi2YacService:
             logger.exception("Unable to load active YAC listeners")
             listeners = []
 
+        try:
+            lgtv_listeners = self.database.get_active_lgtv_listeners()
+        except sqlite3.Error:
+            logger.exception("Unable to load active LGTV listeners")
+            lgtv_listeners = []
+
         logger.info(
             "Caller ID event processed "
             "(received_name=%r, received_number=%r, resolved_name=%r, "
-            "display_number=%r, lookup_matched=%s, active_yac_listeners=%d)",
+            "display_number=%r, lookup_matched=%s, active_yac_listeners=%d, "
+            "active_lgtv_listeners=%d)",
             caller.name,
             caller.number,
             call.name,
             call.display_number,
             call.lookup_matched,
             len(listeners),
+            len(lgtv_listeners),
         )
 
         for listener in listeners:
             future = self._executor.submit(self._send_yac, listener["IP"], call)
             future.add_done_callback(partial(self._log_background_failure, "YAC"))
+
+        if lgtv_listeners and self.lgtv is None:
+            logger.error(
+                "Active LGTV listeners are configured but "
+                "OBI2YAC_LGTV_CLIENT_KEY is not set"
+            )
+        elif self.lgtv is not None:
+            for listener in lgtv_listeners:
+                future = self._executor.submit(
+                    self.lgtv.send, listener["IP"], call
+                )
+                future.add_done_callback(
+                    partial(self._log_background_failure, "LGTV")
+                )
 
         if self.pushbullet is not None:
             future = self._executor.submit(

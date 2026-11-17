@@ -1,10 +1,10 @@
 # Obi2Yac 2.2
 
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
-caller names from SQLite substitutions, notifying configured YAC clients, and
-recording calls. It uses only the Python standard library and is designed to
-run natively on Windows, macOS, or Linux, or in a Docker container. It does not
-require a desktop environment.
+caller names from SQLite substitutions, notifying configured YAC and LG webOS
+TV clients, and recording calls. It is designed to run natively on Windows,
+macOS, or Linux, or in a Docker container. It does not require a desktop
+environment.
 
 The last AutoIt release was version 1.0.0.60. This repository contains version
 2.2, its Python replacement. This project is distributed under the Apache
@@ -20,9 +20,11 @@ limits.
 - Python 3.10 or newer
 - Network access from the OBi device to the configured UDP listener
 - Optional: network access to configured YAC listener hosts, an NCID server,
-  SMTP, or Pushbullet
+- Optional: network access to LG webOS TVs, SMTP, or Pushbullet
+- The `websocket-client` package for LGTV notifications
 
-No third-party Python packages are required.
+Install the Python dependency from the project directory with
+`python -m pip install -r requirements.txt`.
 
 The commands below use `python3`. Run package commands from the directory
 containing the `obi2yac/` project folder unless a section says otherwise.
@@ -118,7 +120,7 @@ Syslog health status at startup and then periodically using the configured
 timeout interval.
 
 The service creates the SQLite database and schema on first start. It seeds
-`ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`
+`ListenerTypes` with `0 Unspecified`, `1 YAC`, and `2 LGTV`; `Substitutions`
 with `1 GOOGLE INC / 6502530000 / 2013-02-26T00:25:02`; and
 `SubstitutionsCache` with `4 LISTYOURSELF.NE / 9145742508 /
 2013-02-26T00:50:27` and `5 EVEREST INST / 3039965473 /
@@ -153,6 +155,7 @@ variables are:
 | `[network] udp_port` | `OBI2YAC_UDP_PORT` | `514` |
 | `[network] yac_port` | `OBI2YAC_YAC_PORT` | `10629` |
 | `[network] yac_timeout` | `OBI2YAC_YAC_TIMEOUT` | `2` seconds |
+| `[lgtv] client_key` | `OBI2YAC_LGTV_CLIENT_KEY` | empty |
 | `[health] host` | `OBI2YAC_HEALTH_HOST` | `0.0.0.0` |
 | `[health] port` | `OBI2YAC_HEALTH_PORT` | `8080` |
 | `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `15` minutes |
@@ -192,6 +195,11 @@ level. Set `OBI2YAC_LOG_LEVEL=DEBUG` as well to see those entries. Raw messages
 can contain caller names, phone numbers, and other sensitive details; enable
 this temporarily and protect the resulting logs.
 
+To enable LGTV notifications, set `OBI2YAC_LGTV_CLIENT_KEY` to the pairing key
+obtained from `LGTV/lg_toast_get_key_test.py` and mark each LGTV listener active
+with listener type ID `2`. Use a key paired with the target TV; keep it private
+and do not store it in a committed config file.
+
 The `[dtmf]` section also accepts the source message markers. SMTP and
 Pushbullet are off unless enabled. DTMF notifications require
 `[dtmf] enabled = true`, at least one trigger, and at least one enabled
@@ -225,12 +233,15 @@ been removed. The legacy Pushbullet option was misspelled
 
 There is no built-in web administration UI. Listener addresses and caller
 substitutions are edited directly in the SQLite database or imported from
-Access. For example, to add a YAC client and a caller substitution:
+Access. For example, to add a YAC client, an LGTV, and a caller substitution:
 
 ```sql
 INSERT INTO ListenerTypes (ID, Type) VALUES (1, 'YAC');
 INSERT INTO Listeners (IP, Description, Type, Active)
 VALUES ('192.0.2.25', 'Office YAC client', 1, 1);
+INSERT INTO ListenerTypes (ID, Type) VALUES (2, 'LGTV');
+INSERT INTO Listeners (IP, Description, Type, Active)
+VALUES ('192.0.2.26', 'Living Room TV', 2, 1);
 
 INSERT INTO Substitutions (Name, Number)
 VALUES ('Example Contact', '2065550123');
@@ -238,7 +249,8 @@ VALUES ('Example Contact', '2065550123');
 
 Only insert the `ListenerTypes` row if it does not already exist. The
 destination IP must be reachable from the host/container and accept inbound
-TCP on the configured YAC port. Keep phone numbers as text. Substitution
+TCP on the configured YAC port for YAC clients, or secure WebSocket traffic on
+port 3001 for LGTVs. Keep phone numbers as text. Substitution
 matching uses the final ten characters of the received number, so store the
 matching ten-character value. SQLite changes are read on the next call without
 restarting the service.
@@ -258,6 +270,12 @@ restarting the service.
 - Active listeners with `Type = 1` receive the original YAC `@CALL` message.
   The service reads listener rows from SQLite for each call, so edits made by a
   local SQLite administration tool are seen on the next call.
+- Active listeners with `Type = 2` receive an LG webOS toast over secure
+  WebSocket on port `3001`. The request uses the configured client key and
+  includes caller name and formatted number; three toast lines are separated
+  by 50 spaces to preserve the wrapping behavior of the pairing test script.
+  An unreachable TV is logged as a warning and does not interrupt call
+  processing.
 - YAC delivery opens an outbound TCP connection to each configured listener
   using `[network] yac_port` (default `10629`). The payload is UTF-8:
   `@CALL` + caller name truncated to 25 characters + `~` + formatted number.
@@ -293,28 +311,23 @@ retain a table that active AutoIt lookup SQL still reads. The external lookup
 code that once populated that cache is commented out and is not ported.
 
 For this checkout, the repository's Access data has been imported into
-`obi2yac/data/obi2yac.sqlite3`. The import contains 6,222 call logs, 2 listeners, 1
-source listener type, 21 substitutions, and 2 legacy cache entries. The
-SQLite database also has one reserved `ListenerTypes` ID 0 row (`Unspecified`)
-for the source listener-type default. This local database is ignored by Git
-and should be treated as private application data.
+`obi2yac/data/obi2yac.sqlite3`. The SQLite database includes default listener
+types 0 (`Unspecified`), 1 (`YAC`), and 2 (`LGTV`). This local database is
+ignored by Git and should be treated as private application data.
 
 | Table | Columns | Notes |
 |---|---|---|
 | `CallLogs` | `ID`, `Name`, `Number`, `CreateDT` | One row per recognized incoming caller-ID event |
-| `Listeners` | `ID`, `IP`, `Description`, `Type`, `Active` | `IP` unique; only active Type 1/YAC rows are contacted |
-| `ListenerTypes` | `ID`, `Type` | The current source database contains ID 1 (YAC) |
+| `Listeners` | `ID`, `IP`, `Description`, `Type`, `Active` | `IP` unique; only active Type 1/YAC and Type 2/LGTV rows are contacted |
+| `ListenerTypes` | `ID`, `Type` | Defaults: ID 0 Unspecified, ID 1 YAC, and ID 2 LGTV |
 | `Substitutions` | `ID`, `Name`, `Number`, `CreateDT` | Explicit local caller-name substitutions; `Number` unique |
 | `SubstitutionsCache` | `ID`, `Name`, `Number`, `CreateDT` | Legacy fallback lookup table; `Number` unique |
 
 The schema preserves integer IDs, text phone numbers, the unique listener IP
-and substitution-number constraints, and the listener-type foreign key. A
-reserved `ListenerTypes` row with ID `0` is inserted as `Unspecified` when
-missing. This makes the source's `Listeners.Type` default of `0` valid under
-SQLite foreign-key enforcement. Type ID `1` remains YAC. Fresh databases do
-not seed an NCID listener type; migrated databases preserve listener types
-present in their Access exports. Null listener type/active values remain
-possible; only `Active = 1` and `Type = 1` are broadcast.
+and substitution-number constraints, and the listener-type foreign key.
+Default listener type rows are inserted when missing. Null listener
+type/active values remain possible; only `Active = 1` and recognized listener
+types are broadcast.
 
 Access fields for call-log and substitution values are nullable in the
 inspected file, although the current records contain no null values. The

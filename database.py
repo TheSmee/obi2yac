@@ -10,6 +10,7 @@ SCHEMA_VERSION = 1
 DEFAULT_LISTENER_TYPES = (
     (0, "Unspecified"),
     (1, "YAC"),
+    (2, "LGTV"),
 )
 DEFAULT_SUBSTITUTIONS = (
     (1, "GOOGLE INC", "6502530000", "2013-02-26T00:25:02"),
@@ -143,5 +144,13 @@ class Database:
             return list(
                 connection.execute(
                     "SELECT ID, IP FROM Listeners WHERE Active = 1 AND Type = 1"
+                )
+            )
+
+    def get_active_lgtv_listeners(self) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return list(
+                connection.execute(
+                    "SELECT ID, IP FROM Listeners WHERE Active = 1 AND Type = 2"
                 )
             )

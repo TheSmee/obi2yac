@@ -22,6 +22,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.ncid_enabled)
         self.assertEqual(config.ncid_host, "")
         self.assertEqual(config.ncid_port, 3333)
+        self.assertEqual(config.lgtv_client_key, "")
         self.assertEqual(config.dtmf_triggers, ("69#",))
         self.assertFalse(config.log_raw_syslog)
         self.assertFalse(config.pushbullet_enabled)
@@ -76,6 +77,12 @@ class ConfigTests(unittest.TestCase):
             config = make_config(temp, health_timeout="20")
 
         self.assertEqual(config.health_timeout, 20)
+
+    def test_lgtv_client_key_can_be_configured_by_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(temp, lgtv_client_key="synthetic-client-key")
+
+        self.assertEqual(config.lgtv_client_key, "synthetic-client-key")
 
     def test_ncid_settings_support_requested_environment_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

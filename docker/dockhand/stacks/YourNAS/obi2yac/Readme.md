@@ -60,6 +60,11 @@ settings. Replace placeholder SMTP or Pushbullet settings only if you use
 those integrations. Keep real tokens and passwords private; do not publish
 `.env` or include real credentials in screenshots or support logs.
 
+For LG webOS TV notifications, set `OBI2YAC_LGTV_CLIENT_KEY` in `.env` to the
+pairing key obtained from `LGTV/lg_toast_get_key_test.py`. The Compose file
+passes this value into the container. Add each TV as an active listener with
+`ListenerTypes.ID = 2` and `Listeners.Active = 1`; keep the pairing key private.
+
 DTMF alerts are disabled by default. To enable them, set
 `OBI2YAC_DTMF_ENABLED=true`, configure at least one trigger, and enable at least
 one delivery method: SMTP, Pushbullet, or both. For Pushbullet, set
@@ -73,9 +78,9 @@ values.
 `starting` state with HTTP 200 for this interval while it waits for the first
 Syslog datagram; after that, no recent Syslog activity results in HTTP 503.
 
-The Compose file passes the NCID environment variables from `.env` into the
-container. Set `OBI2YAC_NCID_ENABLED=true` and configure the NCID host and port
-to enable it.
+The Compose file passes the NCID and LGTV environment variables from `.env`
+into the container. Set `OBI2YAC_NCID_ENABLED=true` and configure the NCID host
+and port to enable NCID.
 
 ## Create and deploy the Dockhand stack
 

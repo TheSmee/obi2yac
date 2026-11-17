@@ -1,10 +1,15 @@
 import json
+from datetime import datetime
 from pathlib import Path
 from pywebostv.connection import WebOSClient
 from pywebostv.controls import SystemControl
 
 TV_IP = "172.16.0.212"
 KEY_FILE = Path("lg_tv_key.json")
+
+def toast_lines(*lines, pad=50):
+    """Join lines with enough spaces to force wrapping."""
+    return (" " * pad).join(lines)
 
 # Load existing key if we have one
 store = {}
@@ -26,6 +31,11 @@ for status in client.register(store):
 
 print("Sending toast...")
 system = SystemControl(client)
-system.notify("Test message from Python")
+current_time = datetime.now().strftime("%I:%M %p")
+system.notify(toast_lines(
+    f"The Phone is ringing... {current_time}",
+    "Name: Yac Test Call",
+    "Number: (425) 555-1212"
+))
 
 print("Done")

@@ -57,6 +57,7 @@ class AppConfig:
     ncid_enabled: bool
     ncid_host: str
     ncid_port: int
+    lgtv_client_key: str
     database_path: Path
     log_level: str
     log_raw_syslog: bool
@@ -167,6 +168,7 @@ def load_config(
     ncid_enabled = get_bool("ncid", "enabled")
     ncid_host = get("ncid", "host", "")
     ncid_port = _port(get("ncid", "port", "3333"), "ncid.port")
+    lgtv_client_key = get("lgtv", "client_key", "")
     if ncid_enabled and not ncid_host:
         raise ValueError("NCID is enabled but no host is configured")
     database_path_value = get("database", "path", str(DEFAULT_DATABASE_PATH))
@@ -254,6 +256,7 @@ def load_config(
         ncid_enabled=ncid_enabled,
         ncid_host=ncid_host,
         ncid_port=ncid_port,
+        lgtv_client_key=lgtv_client_key,
         database_path=database_path,
         log_level=log_level,
         log_raw_syslog=log_raw_syslog,

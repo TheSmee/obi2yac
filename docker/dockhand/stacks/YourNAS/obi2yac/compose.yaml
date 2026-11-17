@@ -42,6 +42,7 @@ services:
       OBI2YAC_NCID_ENABLED: "${OBI2YAC_NCID_ENABLED}"
       OBI2YAC_NCID_HOST: "${OBI2YAC_NCID_HOST}"
       OBI2YAC_NCID_PORT: "${OBI2YAC_NCID_PORT}"
+      OBI2YAC_LGTV_CLIENT_KEY: "${OBI2YAC_LGTV_CLIENT_KEY}"
 
     volumes:
       - /volume1/docker/obi2yac/data:/data

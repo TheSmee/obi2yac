@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from obi2yac.database import Database
+from obi2yac.events import ResolvedCall
 from obi2yac.service import Obi2YacService
 from obi2yac.tests.helpers import TemporaryDirectoryTestCase, make_config
 
@@ -199,6 +200,34 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             service.stop()
             tcp_listener.close()
             receiver.join(timeout=1)
+
+    def test_call_event_dispatches_to_active_lgtv_listener(self) -> None:
+        config = make_config(
+            self.temp_path, lgtv_client_key="synthetic-client-key"
+        )
+        service = Obi2YacService(config)
+        with service.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO Listeners (IP, Type, Active) VALUES (?, 2, 1)",
+                ("192.0.2.25",),
+            )
+        try:
+            with patch.object(service.lgtv, "send") as send_lgtv:
+                service.process_message(
+                    "[SLIC] CID to deliver: 'Synthetic Caller' 2065550123"
+                )
+                service._executor.shutdown(wait=True)
+
+            send_lgtv.assert_called_once_with(
+                "192.0.2.25",
+                ResolvedCall(
+                    name="Synthetic Caller",
+                    number="2065550123",
+                    display_number="(206) 555-0123",
+                ),
+            )
+        finally:
+            service.stop()
 
     def test_irrelevant_udp_message_is_not_logged(self) -> None:
         config = make_config(self.temp_path)
