@@ -16,3 +16,6 @@ data/*.sqlite-*
 
 # Ignore Access Files
 *.accdb
+
+# Ignore generated lg_tv_key.json
+lg_tv_key.json

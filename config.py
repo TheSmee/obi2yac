@@ -18,6 +18,7 @@ ENVIRONMENT_ALIASES = {
     "ncid.port": ("OBI2YAC_NCID_PORT", "NCID_PORT"),
     "database.path": ("OBI2YAC_DATABASE_PATH", "OBI2YAC_DB_PATH"),
     "logging.level": ("OBI2YAC_LOG_LEVEL",),
+    "logging.raw_syslog": ("OBI2YAC_LOG_RAW_SYSLOG",),
     "pushbullet.enabled": ("OBI2YAC_PUSHBULLET_ENABLED", "OBI2YAC_PUSHBULLETLENABLE"),
     "pushbullet.token": ("OBI2YAC_PUSHBULLET_TOKEN", "OBI2YAC_PUSHBULLETKEY"),
     "pushbullet.timeout": ("OBI2YAC_PUSHBULLET_TIMEOUT",),
@@ -56,8 +57,10 @@ class AppConfig:
     ncid_enabled: bool
     ncid_host: str
     ncid_port: int
+    lgtv_client_key: str
     database_path: Path
     log_level: str
+    log_raw_syslog: bool
     pushbullet_enabled: bool
     pushbullet_token: str
     pushbullet_timeout: float
@@ -165,6 +168,7 @@ def load_config(
     ncid_enabled = get_bool("ncid", "enabled")
     ncid_host = get("ncid", "host", "")
     ncid_port = _port(get("ncid", "port", "3333"), "ncid.port")
+    lgtv_client_key = get("lgtv", "client_key", "")
     if ncid_enabled and not ncid_host:
         raise ValueError("NCID is enabled but no host is configured")
     database_path_value = get("database", "path", str(DEFAULT_DATABASE_PATH))
@@ -181,6 +185,7 @@ def load_config(
     log_level = get("logging", "level", "INFO").upper()
     if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         raise ValueError("[logging] level must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
+    log_raw_syslog = get_bool("logging", "raw_syslog")
 
     pushbullet_enabled = get_bool("pushbullet", "enabled")
     pushbullet_token = get("pushbullet", "token", "")
@@ -235,8 +240,10 @@ def load_config(
     dtmf_enabled = get_bool("dtmf", "enabled")
     if dtmf_enabled and not triggers:
         raise ValueError("DTMF alerts are enabled but no trigger sequence is configured")
-    if dtmf_enabled and not smtp_enabled:
-        raise ValueError("DTMF alerts are enabled but SMTP is disabled")
+    if dtmf_enabled and not (smtp_enabled or pushbullet_enabled):
+        raise ValueError(
+            "DTMF alerts are enabled but both SMTP and Pushbullet are disabled"
+        )
 
     return AppConfig(
         udp_host=udp_host,
@@ -249,8 +256,10 @@ def load_config(
         ncid_enabled=ncid_enabled,
         ncid_host=ncid_host,
         ncid_port=ncid_port,
+        lgtv_client_key=lgtv_client_key,
         database_path=database_path,
         log_level=log_level,
+        log_raw_syslog=log_raw_syslog,
         pushbullet_enabled=pushbullet_enabled,
         pushbullet_token=pushbullet_token,
         pushbullet_timeout=pushbullet_timeout,

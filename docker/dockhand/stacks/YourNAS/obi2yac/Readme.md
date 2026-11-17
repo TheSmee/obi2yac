@@ -60,13 +60,27 @@ settings. Replace placeholder SMTP or Pushbullet settings only if you use
 those integrations. Keep real tokens and passwords private; do not publish
 `.env` or include real credentials in screenshots or support logs.
 
+For LG webOS TV notifications, set `OBI2YAC_LGTV_CLIENT_KEY` in `.env` to the
+pairing key obtained from `LGTV/lg_toast_get_key_test.py`. The Compose file
+passes this value into the container. Add each TV as an active listener with
+`ListenerTypes.ID = 2` and `Listeners.Active = 1`; keep the pairing key private.
+
+DTMF alerts are disabled by default. To enable them, set
+`OBI2YAC_DTMF_ENABLED=true`, configure at least one trigger, and enable at least
+one delivery method: SMTP, Pushbullet, or both. For Pushbullet, set
+`OBI2YAC_PUSHBULLET_ENABLED=true` and provide a valid token. The marker defaults
+in `.env` match the OBi Syslog messages; trailing newline and NUL characters do
+not prevent the marker matches. Rebuild/redeploy after changing environment
+values.
+
 `OBI2YAC_HEALTH_TIMEOUT` is measured in minutes. Set it to `15` for a
 15-minute Syslog silence window. On startup, the health endpoint remains in
 `starting` state with HTTP 200 for this interval while it waits for the first
 Syslog datagram; after that, no recent Syslog activity results in HTTP 503.
 
-This stack's `compose.yaml` does not currently pass NCID settings to the
-container. NCID configuration in `.env` alone will therefore not enable it.
+The Compose file passes the NCID and LGTV environment variables from `.env`
+into the container. Set `OBI2YAC_NCID_ENABLED=true` and configure the NCID host
+and port to enable NCID.
 
 ## Create and deploy the Dockhand stack
 
@@ -81,6 +95,13 @@ The Dockerfile clones the configured Obi2Yac Git reference during image build,
 so the NAS needs network access to GitHub when building. Changing the source
 reference or application version requires rebuilding and redeploying the
 image.
+
+The Dockerfile is stored in this local stack directory; changing
+`OBI2YAC_REF` updates the cloned application but does not update this Dockerfile.
+When updating the stack, copy the current Dockerfile from the repository too.
+Its build verifies that the LGTV WebSocket dependency can be imported, so a
+missing dependency fails the image build instead of causing a container restart
+loop.
 
 ## Configure the Obi200
 

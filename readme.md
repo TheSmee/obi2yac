@@ -1,13 +1,13 @@
-# Obi2Yac 2.1
+# Obi2Yac 2.2
 
 Obi2Yac is a headless Python service for receiving OBi syslog events, resolving
-caller names from SQLite substitutions, notifying configured YAC clients, and
-recording calls. It uses only the Python standard library and is designed to
-run on Windows, macOS, or Linux. It does not require Docker or a desktop
+caller names from SQLite substitutions, notifying configured YAC and LG webOS
+TV clients, and recording calls. It is designed to run natively on Windows,
+macOS, or Linux, or in a Docker container. It does not require a desktop
 environment.
 
 The last AutoIt release was version 1.0.0.60. This repository contains version
-2.1, its Python replacement. This project is distributed under the Apache
+2.2, its Python replacement. This project is distributed under the Apache
 License 2.0:
 [TheSmee/obi2yac](https://github.com/TheSmee/obi2yac).
 
@@ -20,9 +20,11 @@ limits.
 - Python 3.10 or newer
 - Network access from the OBi device to the configured UDP listener
 - Optional: network access to configured YAC listener hosts, an NCID server,
-  SMTP, or Pushbullet
+- Optional: network access to LG webOS TVs, SMTP, or Pushbullet
+- The `websocket-client` package for LGTV notifications
 
-No third-party Python packages are required.
+Install the Python dependency from the project directory with
+`python -m pip install -r requirements.txt`.
 
 The commands below use `python3`. Run package commands from the directory
 containing the `obi2yac/` project folder unless a section says otherwise.
@@ -75,10 +77,11 @@ python3 -m obi2yac
 On macOS/Linux, use `OBI2YAC_UDP_PORT=5514 OBI2YAC_DATABASE_PATH=obi2yac/data/obi2yac.sqlite3 python3 -m obi2yac`.
 Environment-variable paths are relative to the current working directory;
 relative paths in an INI file are relative to that INI file.
-The application does not currently include a Dockerfile or Compose stack.
 
 To send a synthetic caller-ID event through the app to a local YAC listener,
 see [YAC_TESTING.md](YAC_TESTING.md) for Windows, macOS, and Linux instructions.
+For the Docker deployment example, see
+[the Dockhand/NAS deployment guide](docker/dockhand/stacks/YourNAS/obi2yac/Readme.md).
 
 ### Obi200 Syslog and health monitoring
 
@@ -117,7 +120,7 @@ Syslog health status at startup and then periodically using the configured
 timeout interval.
 
 The service creates the SQLite database and schema on first start. It seeds
-`ListenerTypes` with `0 Unspecified` and `1 YAC`; `Substitutions`
+`ListenerTypes` with `0 Unspecified`, `1 YAC`, and `2 LGTV`; `Substitutions`
 with `1 GOOGLE INC / 6502530000 / 2013-02-26T00:25:02`; and
 `SubstitutionsCache` with `4 LISTYOURSELF.NE / 9145742508 /
 2013-02-26T00:50:27` and `5 EVEREST INST / 3039965473 /
@@ -152,6 +155,7 @@ variables are:
 | `[network] udp_port` | `OBI2YAC_UDP_PORT` | `514` |
 | `[network] yac_port` | `OBI2YAC_YAC_PORT` | `10629` |
 | `[network] yac_timeout` | `OBI2YAC_YAC_TIMEOUT` | `2` seconds |
+| `[lgtv] client_key` | `OBI2YAC_LGTV_CLIENT_KEY` | empty |
 | `[health] host` | `OBI2YAC_HEALTH_HOST` | `0.0.0.0` |
 | `[health] port` | `OBI2YAC_HEALTH_PORT` | `8080` |
 | `[health] timeout` | `OBI2YAC_HEALTH_TIMEOUT` | `15` minutes |
@@ -160,6 +164,7 @@ variables are:
 | `[ncid] port` | `NCID_PORT` or `OBI2YAC_NCID_PORT` | `3333` |
 | `[database] path` | `OBI2YAC_DATABASE_PATH` | `obi2yac/data/obi2yac.sqlite3` |
 | `[logging] level` | `OBI2YAC_LOG_LEVEL` | `INFO` |
+| `[logging] raw_syslog` | `OBI2YAC_LOG_RAW_SYSLOG` | `false` |
 | `[pushbullet] enabled` | `OBI2YAC_PUSHBULLET_ENABLED` | `false` |
 | `[pushbullet] token` | `OBI2YAC_PUSHBULLET_TOKEN` | empty |
 | `[pushbullet] timeout` | `OBI2YAC_PUSHBULLET_TIMEOUT` | `5` seconds |
@@ -184,13 +189,25 @@ variables are:
 The HTTP health endpoint listens independently of the UDP Syslog port.
 Restrict its network exposure to trusted monitoring systems.
 
+For troubleshooting, set `[logging] raw_syslog = true` (or
+`OBI2YAC_LOG_RAW_SYSLOG=true`) to log each received Syslog message at `DEBUG`
+level. Set `OBI2YAC_LOG_LEVEL=DEBUG` as well to see those entries. Raw messages
+can contain caller names, phone numbers, and other sensitive details; enable
+this temporarily and protect the resulting logs.
+
+To enable LGTV notifications, set `OBI2YAC_LGTV_CLIENT_KEY` to the pairing key
+obtained from `LGTV/lg_toast_get_key_test.py` and mark each LGTV listener active
+with listener type ID `2`. Use a key paired with the target TV; keep it private
+and do not store it in a committed config file.
+
 The `[dtmf]` section also accepts the source message markers. SMTP and
-Pushbullet are off unless enabled. DTMF email additionally requires
-`[dtmf] enabled = true`, at least one trigger, and SMTP enabled. Enabling
-Pushbullet requires a token; avoid putting a real token in a committed file
-and prefer the environment variable. SMTP authentication is optional; if used,
-configure both username and password. Supported TLS modes are `none`,
-`starttls`, and `ssl`.
+Pushbullet are off unless enabled. DTMF notifications require
+`[dtmf] enabled = true`, at least one trigger, and at least one enabled
+delivery method (SMTP and/or Pushbullet). When both are enabled, a matching
+trigger sends both an email and a Pushbullet note. Enabling Pushbullet requires
+a token; avoid putting a real token in a committed file and prefer the
+environment variable. SMTP authentication is optional; if used, configure both
+username and password. Supported TLS modes are `none`, `starttls`, and `ssl`.
 
 The fully qualified form `OBI2YAC_<SECTION>_<OPTION>` is also accepted (for
 example, `OBI2YAC_NETWORK_UDP_PORT`). Original INI option aliases are available
@@ -216,12 +233,15 @@ been removed. The legacy Pushbullet option was misspelled
 
 There is no built-in web administration UI. Listener addresses and caller
 substitutions are edited directly in the SQLite database or imported from
-Access. For example, to add a YAC client and a caller substitution:
+Access. For example, to add a YAC client, an LGTV, and a caller substitution:
 
 ```sql
 INSERT INTO ListenerTypes (ID, Type) VALUES (1, 'YAC');
 INSERT INTO Listeners (IP, Description, Type, Active)
 VALUES ('192.0.2.25', 'Office YAC client', 1, 1);
+INSERT INTO ListenerTypes (ID, Type) VALUES (2, 'LGTV');
+INSERT INTO Listeners (IP, Description, Type, Active)
+VALUES ('192.0.2.26', 'Living Room TV', 2, 1);
 
 INSERT INTO Substitutions (Name, Number)
 VALUES ('Example Contact', '2065550123');
@@ -229,7 +249,8 @@ VALUES ('Example Contact', '2065550123');
 
 Only insert the `ListenerTypes` row if it does not already exist. The
 destination IP must be reachable from the host/container and accept inbound
-TCP on the configured YAC port. Keep phone numbers as text. Substitution
+TCP on the configured YAC port for YAC clients, or secure WebSocket traffic on
+port 3001 for LGTVs. Keep phone numbers as text. Substitution
 matching uses the final ten characters of the received number, so store the
 matching ten-character value. SQLite changes are read on the next call without
 restarting the service.
@@ -249,6 +270,12 @@ restarting the service.
 - Active listeners with `Type = 1` receive the original YAC `@CALL` message.
   The service reads listener rows from SQLite for each call, so edits made by a
   local SQLite administration tool are seen on the next call.
+- Active listeners with `Type = 2` receive an LG webOS toast over secure
+  WebSocket on port `3001`. The request uses the configured client key and
+  includes caller name and formatted number; three toast lines are separated
+  by 50 spaces to preserve the wrapping behavior of the pairing test script.
+  An unreachable TV is logged as a warning and does not interrupt call
+  processing.
 - YAC delivery opens an outbound TCP connection to each configured listener
   using `[network] yac_port` (default `10629`). The payload is UTF-8:
   `@CALL` + caller name truncated to 25 characters + `~` + formatted number.
@@ -264,11 +291,13 @@ restarting the service.
   deduplication rule, so retransmitted caller-ID events are not deduplicated.
 - Pushbullet sends the original “New House Call” note when enabled, with the
   local time formatted as `M/D/YYYY h:mm:ss AM/PM`.
-- DTMF email alerts are sent only when capture starts, the captured digits
-  exactly match one of the configured triggers, and the configured end marker
-  arrives. An on-hook marker clears partial capture. The alert subject is
-  `Obi2Yac Alert: <configured subject>`, and the message identifies the
-  matched trigger.
+- DTMF alerts are sent only when capture starts, the captured digits exactly
+  match one of the configured triggers, and the configured end marker arrives.
+  A match is logged at `INFO` with the captured trigger. Successful email
+  and/or Pushbullet delivery is separately logged at `INFO`; failures are
+  logged as errors. An on-hook marker clears partial capture. Enabled SMTP and
+  Pushbullet integrations each receive an alert titled
+  `Obi2Yac Alert: <configured subject>` that identifies the matched trigger.
 
 The UDP receiver queues packets and processes them in order on a worker thread.
 YAC destinations are notified concurrently, with a timeout per connection, so
@@ -282,28 +311,23 @@ retain a table that active AutoIt lookup SQL still reads. The external lookup
 code that once populated that cache is commented out and is not ported.
 
 For this checkout, the repository's Access data has been imported into
-`obi2yac/data/obi2yac.sqlite3`. The import contains 6,222 call logs, 2 listeners, 1
-source listener type, 21 substitutions, and 2 legacy cache entries. The
-SQLite database also has one reserved `ListenerTypes` ID 0 row (`Unspecified`)
-for the source listener-type default. This local database is ignored by Git
-and should be treated as private application data.
+`obi2yac/data/obi2yac.sqlite3`. The SQLite database includes default listener
+types 0 (`Unspecified`), 1 (`YAC`), and 2 (`LGTV`). This local database is
+ignored by Git and should be treated as private application data.
 
 | Table | Columns | Notes |
 |---|---|---|
 | `CallLogs` | `ID`, `Name`, `Number`, `CreateDT` | One row per recognized incoming caller-ID event |
-| `Listeners` | `ID`, `IP`, `Description`, `Type`, `Active` | `IP` unique; only active Type 1/YAC rows are contacted |
-| `ListenerTypes` | `ID`, `Type` | The current source database contains ID 1 (YAC) |
+| `Listeners` | `ID`, `IP`, `Description`, `Type`, `Active` | `IP` unique; only active Type 1/YAC and Type 2/LGTV rows are contacted |
+| `ListenerTypes` | `ID`, `Type` | Defaults: ID 0 Unspecified, ID 1 YAC, and ID 2 LGTV |
 | `Substitutions` | `ID`, `Name`, `Number`, `CreateDT` | Explicit local caller-name substitutions; `Number` unique |
 | `SubstitutionsCache` | `ID`, `Name`, `Number`, `CreateDT` | Legacy fallback lookup table; `Number` unique |
 
 The schema preserves integer IDs, text phone numbers, the unique listener IP
-and substitution-number constraints, and the listener-type foreign key. A
-reserved `ListenerTypes` row with ID `0` is inserted as `Unspecified` when
-missing. This makes the source's `Listeners.Type` default of `0` valid under
-SQLite foreign-key enforcement. Type ID `1` remains YAC. Fresh databases do
-not seed an NCID listener type; migrated databases preserve listener types
-present in their Access exports. Null listener type/active values remain
-possible; only `Active = 1` and `Type = 1` are broadcast.
+and substitution-number constraints, and the listener-type foreign key.
+Default listener type rows are inserted when missing. Null listener
+type/active values remain possible; only `Active = 1` and recognized listener
+types are broadcast.
 
 Access fields for call-log and substitution values are nullable in the
 inspected file, although the current records contain no null values. The
@@ -391,21 +415,23 @@ database and Access-export CSVs also contain sensitive call information.
   aggregate error and export/validate the CSV again; the tool does not print
   caller names or numbers.
 
-## Future deployment
+## Docker deployment
 
-Containerization and NAS configuration are intentionally out of scope for
-this initial conversion. A later Dockhand stack can map host UDP 514 to an
-unprivileged container UDP port such as 5514, persist the SQLite file on a
-local NAS volume, and run a separate authenticated, LAN-restricted SQLite
-administration tool. Do not expose an unauthenticated database editor to the
-internet.
+An example Dockerfile, Compose stack, environment file, and deployment guide
+are provided at
+[docker/dockhand/stacks/YourNAS/obi2yac](docker/dockhand/stacks/YourNAS/obi2yac/Readme.md).
+The example targets a Synology NAS with Dockhand, but can be adapted for other
+Docker and Compose deployments.
 
-For production use, provide the database as a persistent local container
-volume, set the UDP port and database path through environment variables,
-restrict UDP/TCP access with the NAS firewall, and keep SMTP/Pushbullet
-credentials in the container manager's secret facility where available. The
-YAC port is a destination port for outbound app connections; it is not an
-inbound listener port opened by this service.
+The stack builds the image from the Git reference selected by `OBI2YAC_REF`,
+publishes host UDP port `514` to container UDP port `5514` by default, and
+persists the SQLite database using a host bind mount. The example's health
+endpoint is not published by default; publish container TCP port `8080` only
+if a monitoring host needs access. Its `.env` file passes configuration to the
+container, including `OBI2YAC_LOG_RAW_SYSLOG` for optional raw Syslog logging.
+Restrict network access to trusted hosts, protect credentials, and treat raw
+Syslog logs as sensitive data. The YAC port is used for outbound connections;
+it is not an inbound listener port opened by the service.
 
 ## Attributions and project history
 

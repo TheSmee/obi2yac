@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from obi2yac.database import Database
+from obi2yac.events import ResolvedCall
 from obi2yac.service import Obi2YacService
 from obi2yac.tests.helpers import TemporaryDirectoryTestCase, make_config
 
@@ -200,6 +201,34 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             tcp_listener.close()
             receiver.join(timeout=1)
 
+    def test_call_event_dispatches_to_active_lgtv_listener(self) -> None:
+        config = make_config(
+            self.temp_path, lgtv_client_key="synthetic-client-key"
+        )
+        service = Obi2YacService(config)
+        with service.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO Listeners (IP, Type, Active) VALUES (?, 2, 1)",
+                ("192.0.2.25",),
+            )
+        try:
+            with patch.object(service.lgtv, "send") as send_lgtv:
+                service.process_message(
+                    "[SLIC] CID to deliver: 'Synthetic Caller' 2065550123"
+                )
+                service._executor.shutdown(wait=True)
+
+            send_lgtv.assert_called_once_with(
+                "192.0.2.25",
+                ResolvedCall(
+                    name="Synthetic Caller",
+                    number="2065550123",
+                    display_number="(206) 555-0123",
+                ),
+            )
+        finally:
+            service.stop()
+
     def test_irrelevant_udp_message_is_not_logged(self) -> None:
         config = make_config(self.temp_path)
         service = Obi2YacService(config)
@@ -208,6 +237,32 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             count = connection.execute("SELECT COUNT(*) FROM CallLogs").fetchone()[0]
         self.assertEqual(count, 0)
         service.stop()
+
+    def test_raw_syslog_messages_are_logged_when_enabled(self) -> None:
+        config = make_config(self.temp_path, log_raw_syslog="true")
+        service = Obi2YacService(config)
+        service.start()
+        message = b"<7> synthetic raw syslog message"
+        try:
+            with self.assertLogs("obi2yac.service", level="DEBUG") as captured:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                    sender.sendto(message, service.address)
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and not any(
+                    "Received raw Syslog message:" in entry
+                    for entry in captured.output
+                ):
+                    time.sleep(0.01)
+
+            self.assertTrue(
+                any(
+                    "Received raw Syslog message: '<7> synthetic raw syslog message'"
+                    in entry
+                    for entry in captured.output
+                )
+            )
+        finally:
+            service.stop()
 
     def test_caller_event_logs_received_and_resolved_details(self) -> None:
         config = make_config(self.temp_path)
@@ -291,16 +346,40 @@ class ServiceTests(TemporaryDirectoryTestCase, unittest.TestCase):
             self.temp_path,
             smtp_enabled="true",
             dtmf_enabled="true",
+            pushbullet_enabled="true",
+            pushbullet_token="synthetic-token",
         )
         service = Obi2YacService(config)
         try:
-            with patch.object(service.email, "send_dtmf_alert") as send_alert:
+            with (
+                patch.object(service.email, "send_dtmf_alert") as send_email,
+                patch.object(service.pushbullet, "send_dtmf_alert") as send_pushbullet,
+                self.assertLogs("obi2yac.service", level="INFO") as captured,
+            ):
                 service.process_message("DIAL START")
                 service.process_message("tone : 6 DTMF DIGIT")
                 service.process_message("tone : 9 DTMF DIGIT")
                 service.process_message("tone : # DTMF DIGIT")
                 service.process_message("DIAL END")
-            send_alert.assert_called_once_with("69#")
+                service._executor.shutdown(wait=True)
+            send_email.assert_called_once_with("69#")
+            send_pushbullet.assert_called_once_with("69#", "Test")
+            self.assertEqual(
+                [
+                    line
+                    for line in captured.output
+                    if "DTMF trigger matched:" in line
+                ],
+                ["INFO:obi2yac.service:DTMF trigger matched: 69#"],
+            )
+            self.assertIn(
+                "INFO:obi2yac.service:Email notification sent for DTMF trigger: 69#",
+                captured.output,
+            )
+            self.assertIn(
+                "INFO:obi2yac.service:Pushbullet notification sent for DTMF trigger: 69#",
+                captured.output,
+            )
         finally:
             service.stop()
 

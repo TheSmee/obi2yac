@@ -18,6 +18,7 @@ services:
       OBI2YAC_UDP_PORT: "${OBI2YAC_UDP_PORT}"
       OBI2YAC_DATABASE_PATH: "${OBI2YAC_DATABASE_PATH}"
       OBI2YAC_LOG_LEVEL: "${OBI2YAC_LOG_LEVEL}"
+      OBI2YAC_LOG_RAW_SYSLOG: "${OBI2YAC_LOG_RAW_SYSLOG}"
       OBI2YAC_PUSHBULLET_ENABLED: "${OBI2YAC_PUSHBULLET_ENABLED}"
       OBI2YAC_PUSHBULLET_TOKEN: "${OBI2YAC_PUSHBULLET_TOKEN}"
       OBI2YAC_PUSHBULLET_TIMEOUT: "${OBI2YAC_PUSHBULLET_TIMEOUT}"
@@ -41,9 +42,21 @@ services:
       OBI2YAC_NCID_ENABLED: "${OBI2YAC_NCID_ENABLED}"
       OBI2YAC_NCID_HOST: "${OBI2YAC_NCID_HOST}"
       OBI2YAC_NCID_PORT: "${OBI2YAC_NCID_PORT}"
+      OBI2YAC_LGTV_CLIENT_KEY: "${OBI2YAC_LGTV_CLIENT_KEY}"
 
     volumes:
       - /volume1/docker/obi2yac/data:/data
 
     ports:
       - "${SYSLOG_HOST_PORT}:5514/udp"
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

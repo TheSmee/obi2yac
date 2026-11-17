@@ -24,6 +24,7 @@ from .events import (
 )
 from .integrations import (
     EmailNotifier,
+    LGTVNotifier,
     NcidClient,
     PushbulletNotifier,
     YacBroadcaster,
@@ -40,6 +41,11 @@ class Obi2YacService:
         self.database = Database(config.database_path)
         self.database.initialize()
         self.yac = YacBroadcaster(config.yac_port, config.yac_timeout)
+        self.lgtv = (
+            LGTVNotifier(config.lgtv_client_key)
+            if config.lgtv_client_key
+            else None
+        )
         self.pushbullet = (
             PushbulletNotifier(config.pushbullet_token, config.pushbullet_timeout)
             if config.pushbullet_enabled
@@ -83,6 +89,8 @@ class Obi2YacService:
                 service._record_syslog_received()
                 try:
                     text = data.decode("utf-8", errors="replace")
+                    if service.config.log_raw_syslog:
+                        logger.debug("Received raw Syslog message: %r", text)
                     service._messages.put_nowait(text)
                 except queue.Full:
                     logger.error("Syslog processing queue is full; dropping a packet")
@@ -245,14 +253,35 @@ class Obi2YacService:
 
     def process_message(self, message: str) -> None:
         triggered_digits = self.dtmf.feed(message)
-        if triggered_digits is not None and self.email is not None:
-            future = self._executor.submit(
-                send_with_logging,
-                "SMTP",
-                self.email.send_dtmf_alert,
-                triggered_digits,
-            )
-            future.add_done_callback(partial(self._log_background_failure, "SMTP"))
+        if triggered_digits is not None:
+            logger.info("DTMF trigger matched: %s", triggered_digits)
+            if self.email is not None:
+                future = self._executor.submit(
+                    send_with_logging,
+                    "SMTP",
+                    self.email.send_dtmf_alert,
+                    triggered_digits,
+                )
+                future.add_done_callback(
+                    partial(
+                        self._log_dtmf_notification, "Email", triggered_digits
+                    )
+                )
+            if self.pushbullet is not None:
+                future = self._executor.submit(
+                    send_with_logging,
+                    "Pushbullet",
+                    self.pushbullet.send_dtmf_alert,
+                    triggered_digits,
+                    self.config.email_subject,
+                )
+                future.add_done_callback(
+                    partial(
+                        self._log_dtmf_notification,
+                        "Pushbullet",
+                        triggered_digits,
+                    )
+                )
 
         caller = parse_caller_id(message)
         if caller is None:
@@ -276,21 +305,43 @@ class Obi2YacService:
             logger.exception("Unable to load active YAC listeners")
             listeners = []
 
+        try:
+            lgtv_listeners = self.database.get_active_lgtv_listeners()
+        except sqlite3.Error:
+            logger.exception("Unable to load active LGTV listeners")
+            lgtv_listeners = []
+
         logger.info(
             "Caller ID event processed "
             "(received_name=%r, received_number=%r, resolved_name=%r, "
-            "display_number=%r, lookup_matched=%s, active_yac_listeners=%d)",
+            "display_number=%r, lookup_matched=%s, active_yac_listeners=%d, "
+            "active_lgtv_listeners=%d)",
             caller.name,
             caller.number,
             call.name,
             call.display_number,
             call.lookup_matched,
             len(listeners),
+            len(lgtv_listeners),
         )
 
         for listener in listeners:
             future = self._executor.submit(self._send_yac, listener["IP"], call)
             future.add_done_callback(partial(self._log_background_failure, "YAC"))
+
+        if lgtv_listeners and self.lgtv is None:
+            logger.error(
+                "Active LGTV listeners are configured but "
+                "OBI2YAC_LGTV_CLIENT_KEY is not set"
+            )
+        elif self.lgtv is not None:
+            for listener in lgtv_listeners:
+                future = self._executor.submit(
+                    self.lgtv.send, listener["IP"], call
+                )
+                future.add_done_callback(
+                    partial(self._log_background_failure, "LGTV")
+                )
 
         if self.pushbullet is not None:
             future = self._executor.submit(
@@ -328,7 +379,21 @@ class Obi2YacService:
             logger.warning("Unable to reach YAC listener at %s", host)
 
     @staticmethod
-    def _log_background_failure(component: str, future: Future[None]) -> None:
+    def _log_dtmf_notification(
+        component: str, digits: str, future: Future[bool]
+    ) -> None:
+        try:
+            sent = future.result()
+        except Exception:
+            logger.exception("%s DTMF notification failed", component)
+            return
+        if sent:
+            logger.info("%s notification sent for DTMF trigger: %s", component, digits)
+
+    @staticmethod
+    def _log_background_failure(
+        component: str, future: Future[None] | Future[bool]
+    ) -> None:
         try:
             future.result()
         except Exception:

@@ -22,7 +22,9 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.ncid_enabled)
         self.assertEqual(config.ncid_host, "")
         self.assertEqual(config.ncid_port, 3333)
+        self.assertEqual(config.lgtv_client_key, "")
         self.assertEqual(config.dtmf_triggers, ("69#",))
+        self.assertFalse(config.log_raw_syslog)
         self.assertFalse(config.pushbullet_enabled)
         self.assertFalse(config.smtp_enabled)
         self.assertFalse(config.dtmf_enabled)
@@ -64,11 +66,23 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.log_level, "WARNING")
         self.assertEqual(config.health_timeout, 20)
 
+    def test_raw_syslog_logging_can_be_enabled_by_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(temp, log_raw_syslog="true")
+
+        self.assertTrue(config.log_raw_syslog)
+
     def test_health_timeout_can_be_overridden_by_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             config = make_config(temp, health_timeout="20")
 
         self.assertEqual(config.health_timeout, 20)
+
+    def test_lgtv_client_key_can_be_configured_by_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(temp, lgtv_client_key="synthetic-client-key")
+
+        self.assertEqual(config.lgtv_client_key, "synthetic-client-key")
 
     def test_ncid_settings_support_requested_environment_names(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -132,14 +146,27 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "SMTP is enabled"):
                 load_config(config_path)
 
-    def test_dtmf_requires_trigger_and_smtp(self) -> None:
+    def test_dtmf_requires_trigger_and_at_least_one_notification_service(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "no trigger sequence"):
                 make_config(
                     temp, dtmf_enabled="true", dtmf_trigger_1=""
                 )
-            with self.assertRaisesRegex(ValueError, "SMTP is disabled"):
+            with self.assertRaisesRegex(ValueError, "both SMTP and Pushbullet"):
                 make_config(temp, dtmf_enabled="true")
+
+    def test_dtmf_can_use_pushbullet_without_smtp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = make_config(
+                temp,
+                dtmf_enabled="true",
+                pushbullet_enabled="true",
+                pushbullet_token="synthetic-token",
+            )
+
+        self.assertTrue(config.dtmf_enabled)
+        self.assertFalse(config.smtp_enabled)
+        self.assertTrue(config.pushbullet_enabled)
 
     def test_missing_configuration_is_reported(self) -> None:
         with self.assertRaises(FileNotFoundError):

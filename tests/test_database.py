@@ -88,6 +88,19 @@ class DatabaseTests(TemporaryDirectoryTestCase, unittest.TestCase):
         self.assertIsNone(listener["Active"])
         self.assertEqual(self.database.get_active_yac_listeners(), [])
 
+    def test_active_lgtv_listener_is_selected(self) -> None:
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO Listeners (IP, Type, Active) VALUES (?, 2, 1)",
+                ("192.0.2.25",),
+            )
+            connection.execute(
+                "INSERT INTO Listeners (IP, Type, Active) VALUES (?, 2, 0)",
+                ("192.0.2.26",),
+            )
+        listeners = self.database.get_active_lgtv_listeners()
+        self.assertEqual([listener["IP"] for listener in listeners], ["192.0.2.25"])
+
     def test_initialization_seeds_defaults_and_is_idempotent(self) -> None:
         with self.database.connect() as connection:
             listener_types = connection.execute(
@@ -99,7 +112,11 @@ class DatabaseTests(TemporaryDirectoryTestCase, unittest.TestCase):
             cache = connection.execute(
                 "SELECT ID, Name, Number, CreateDT FROM SubstitutionsCache ORDER BY ID"
             ).fetchall()
-        expected_listener_types = [(0, "Unspecified"), (1, "YAC")]
+        expected_listener_types = [
+            (0, "Unspecified"),
+            (1, "YAC"),
+            (2, "LGTV"),
+        ]
         expected_substitutions = [
             (1, "GOOGLE INC", "6502530000", "2013-02-26T00:25:02")
         ]

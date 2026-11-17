@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import ssl
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -11,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from obi2yac.events import ResolvedCall
 from obi2yac.integrations import (
     EmailNotifier,
+    LGTVNotifier,
     NcidClient,
     PushbulletNotifier,
     SmtpSettings,
@@ -33,6 +35,58 @@ class IntegrationTests(unittest.TestCase):
             b"@CALLSynthetic Caller With A L~(206) 555-0123",
         )
         self.assertFalse(payload.endswith(b"\n"))
+
+    @patch(
+        "obi2yac.integrations.uuid.uuid4",
+        side_effect=["registration-id", "toast-id"],
+    )
+    @patch("obi2yac.integrations.websocket.create_connection")
+    def test_lgtv_registers_and_sends_padded_toast(
+        self, create_connection: MagicMock, _uuid4: MagicMock
+    ) -> None:
+        client = create_connection.return_value
+        client.recv.side_effect = [
+            json.dumps({"id": "registration-id", "type": "registered"}),
+            json.dumps({"id": "toast-id", "type": "response"}),
+        ]
+
+        LGTVNotifier("synthetic-client-key").send("192.0.2.25", self.call)
+
+        create_connection.assert_called_once_with(
+            "wss://192.0.2.25:3001/",
+            timeout=10.0,
+            suppress_origin=True,
+            sslopt={"cert_reqs": ssl.CERT_NONE},
+        )
+        registration = json.loads(client.send.call_args_list[0].args[0])
+        self.assertEqual(registration["type"], "register")
+        self.assertEqual(
+            registration["payload"]["client-key"], "synthetic-client-key"
+        )
+        self.assertEqual(
+            registration["payload"]["manifest"]["permissions"],
+            ["WRITE_NOTIFICATION_TOAST"],
+        )
+        toast = json.loads(client.send.call_args_list[1].args[0])
+        self.assertEqual(toast["uri"], "ssap://system.notifications/createToast")
+        lines = toast["payload"]["message"].split(" " * 50)
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("The Phone is ringing... "))
+        self.assertEqual(lines[1], f"Name: {self.call.name}")
+        self.assertEqual(lines[2], f"Number: {self.call.display_number}")
+        client.close.assert_called_once_with()
+
+    @patch("obi2yac.integrations.websocket.create_connection", side_effect=TimeoutError)
+    def test_unavailable_lgtv_listener_is_logged_without_error(
+        self, create_connection: MagicMock
+    ) -> None:
+        with self.assertLogs("obi2yac.integrations", level="WARNING") as captured:
+            LGTVNotifier("synthetic-client-key").send("192.0.2.25", self.call)
+
+        self.assertEqual(len(captured.output), 1)
+        self.assertIn("Unable to reach LGTV listener at 192.0.2.25", captured.output[0])
+        self.assertNotIn("ERROR", captured.output[0])
+        create_connection.assert_called_once()
 
     def test_ncid_line_format_and_tcp_delivery(self) -> None:
         timestamp = datetime(2026, 10, 17, 12, 55)
@@ -95,6 +149,21 @@ class IntegrationTests(unittest.TestCase):
             "Name: Synthetic Caller With A Long Name Here\n"
             "Number: (206) 555-0123\n"
             "Time: 10/15/2026 5:28:57 PM",
+        )
+
+    @patch("obi2yac.integrations.urlopen")
+    def test_pushbullet_sends_dtmf_alert(self, urlopen: MagicMock) -> None:
+        response = MagicMock()
+        response.status = 200
+        urlopen.return_value.__enter__.return_value = response
+
+        PushbulletNotifier("synthetic-token", 1).send_dtmf_alert("69#", "Test Event")
+
+        payload = json.loads(urlopen.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(payload["type"], "note")
+        self.assertEqual(payload["title"], "Obi2Yac Alert: Test Event")
+        self.assertEqual(
+            payload["body"], "DTMF trigger received: 69#\nEvent type: Test Event"
         )
 
     @patch("obi2yac.integrations.smtplib.SMTP")
