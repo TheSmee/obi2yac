@@ -19,3 +19,6 @@ data/*.sqlite-*
 
 # Ignore generated lg_tv_key.json
 lg_tv_key.json
+
+# Ignore NAS Folder
+.DS_Store
